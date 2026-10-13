@@ -527,7 +527,8 @@ impl Renderer {
         })
     }
 
-    // A texture filled with `data`, `bytes_per_row` per row and `layers` layers
+    // A texture filled with `data`, `bytes_per_row` per row and `layers` layers. An empty
+    // layer is left blank.
     fn upload_texture(
         &self,
         label: &str,
@@ -547,7 +548,7 @@ impl Renderer {
             format,
             wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         );
-        for (z, data) in layers.iter().enumerate() {
+        for (z, data) in layers.iter().enumerate().filter(|(_, d)| !d.is_empty()) {
             self.queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &texture,
@@ -578,7 +579,12 @@ impl Renderer {
     // The scene's atlas pixels go to the GPU and aren't kept: they can take 64 MB
     pub fn upload_scene(&self, mut scene: Scene) -> GpuScene {
         let size = scene.atlas_size as u32;
-        let layers: Vec<&[u8]> = scene.atlas_layers.iter().map(|l| l.as_slice()).collect();
+        let mut layers: Vec<&[u8]> = scene.atlas_layers.iter().map(|l| l.as_slice()).collect();
+        // WebGL2 makes a texture of one layer a plain one, which the shader can't read as an
+        // array, so there are at least two
+        if layers.len() < 2 {
+            layers.resize(2, &[]);
+        }
         let atlas = self.upload_texture("atlas", INDEX_FORMAT, size, size, &layers, size);
         scene.atlas_layers = Vec::new();
         let atlas_view = atlas.create_view(&wgpu::TextureViewDescriptor {
