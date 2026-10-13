@@ -356,6 +356,9 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
   const scrubRef = useRef<HTMLInputElement>(null);
   const applesRef = useRef<HTMLSpanElement>(null);
   const scrubbing = useRef(false);
+  // Whether the settings were open when the current press began: that press only closes them
+  const settingsOpen = useRef(false);
+  const pressClosesSettings = useRef(false);
   const viewerRef = useRef<Viewer | null>(null);
   // Something changed that a paused player has to draw
   const dirty = useRef(true);
@@ -615,7 +618,9 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     return attachGestures(canvas, {
       pan: (dx, dy) => change((v) => v.panBy(dx * dpr(), dy * dpr())),
       zoom: (factor) => change((v) => v.zoomBy(factor)),
-      tap: togglePlay,
+      tap: () => {
+        if (!pressClosesSettings.current) togglePlay();
+      },
     });
   }, [change, togglePlay]);
 
@@ -715,6 +720,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
       className={className}
       tabIndex={0}
       onKeyDown={onKeyDown}
+      onPointerDownCapture={() => (pressClosesSettings.current = settingsOpen.current)}
       onPointerDown={() => containerRef.current?.focus({ preventScroll: true })}
       style={{
         position: "relative",
@@ -763,6 +769,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
           scrubRef={scrubRef}
           applesRef={applesRef}
           scrubbing={scrubbing}
+          settingsOpen={settingsOpen}
           onTogglePlay={togglePlay}
           onSeek={seek}
           onSlower={() => act(Action.Slower)}

@@ -22,6 +22,8 @@ export interface ControlsProps {
   scrubRef: RefObject<HTMLInputElement>;
   applesRef: RefObject<HTMLSpanElement>;
   scrubbing: MutableRefObject<boolean>;
+  // Whether the settings are open, for the view: the press that closes them doesn't play or pause
+  settingsOpen: MutableRefObject<boolean>;
   onTogglePlay(): void;
   onSeek(seconds: number): void;
   onSlower(): void;
@@ -290,13 +292,14 @@ export function Controls(p: ControlsProps) {
 
   // Clicking anywhere else closes the settings
   useEffect(() => {
+    p.settingsOpen.current = settingsOpen;
     if (!settingsOpen) return;
     const close = (e: PointerEvent) => {
       if (!barRef.current?.contains(e.target as Node)) setSettingsOpen(false);
     };
     document.addEventListener("pointerdown", close);
     return () => document.removeEventListener("pointerdown", close);
-  }, [settingsOpen]);
+  }, [settingsOpen, p.settingsOpen]);
 
   return (
     <div ref={barRef} className="rectools-controls" style={bar}>
