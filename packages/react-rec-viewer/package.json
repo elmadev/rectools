@@ -1,6 +1,6 @@
 {
   "name": "@elmadev/react-rec-viewer",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Elasto Mania replay viewer for React, drawn with WebGPU or WebGL2",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE.md",

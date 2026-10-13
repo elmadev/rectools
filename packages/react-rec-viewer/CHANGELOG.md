@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.7 - 2026-10-13
+
+- The Across timer is in the one color Across draws it in, rather than Elma's.
+
 ## 0.1.6 - 2026-10-13
 
 - Across replays drew only the timer in browsers without WebGPU, which use WebGL2.
