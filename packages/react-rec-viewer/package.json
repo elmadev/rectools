@@ -1,6 +1,6 @@
 {
   "name": "@rectools/react-rec-viewer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Elasto Mania replay viewer for React, drawn with WebGPU or WebGL2",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE.md",
@@ -20,7 +20,7 @@
       }
     }
   },
-  "files": ["dist", "wasm", "README.md", "LICENSE.md"],
+  "files": ["dist", "wasm", "README.md", "LICENSE.md", "CHANGELOG.md"],
   "scripts": {
     "build:wasm": "node scripts/build-wasm.mjs",
     "build": "node scripts/build-wasm.mjs && tsc -p tsconfig.json",
