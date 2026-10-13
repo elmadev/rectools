@@ -1,0 +1,672 @@
+// How a replay is watched, whatever shows it: playback, the camera and the settings, with the
+// keys as data. recview and the web player only turn their input into calls here and draw
+// what views() asks for. Where the two used to differ, this follows the web player.
+
+pub mod keys;
+
+pub use keys::{Action, KEYS, KeyHelp, action_for_key};
+
+use elma_formats::lev::ObjectType;
+use render::camera::{self, AutoFrame};
+use render::{
+    CameraMode, DynamicOptions, GhostStyle, MAX_ZOOM, MIN_ZOOM, RenderOptions, SceneOptions,
+    TextureZoom, ViewParams,
+};
+use replay::{Session, Step, Vec2};
+
+// The last frame stays this long before the replay starts over, as in the game
+pub const END_PAUSE: f64 = 0.4;
+pub const SPEED_STEP: f64 = 0.8;
+pub const ZOOM_STEP: f64 = 1.2;
+// Seeking with the arrow keys moves this many seconds of the replay at normal speed
+pub const SEEK_SECONDS: f64 = 2.5;
+// What stepping one frame moves
+pub const FRAME_SECONDS: f64 = 1.0 / 30.0;
+
+// A bike of the session: its riders, then its ghosts
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct BikeId(pub usize);
+
+// How the level is drawn
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LevelOptions {
+    pub grass: bool,
+    pub pictures: bool,
+    // The level's own ground and sky, instead of the LGR's default ones
+    pub custom_sky: bool,
+    // Arrows on the gravity apples
+    pub arrows: bool,
+    // Apples, killers and the exit turn through their frames
+    pub animated_objects: bool,
+    // Apples and the exit stay put instead of bobbing up and down
+    pub still_objects: bool,
+    // The single color pictures of a fancyboosted LGR
+    pub fancyboost: bool,
+}
+
+impl Default for LevelOptions {
+    fn default() -> Self {
+        LevelOptions {
+            grass: true,
+            pictures: true,
+            custom_sky: true,
+            arrows: true,
+            animated_objects: true,
+            still_objects: false,
+            fancyboost: true,
+        }
+    }
+}
+
+// What the viewer chose, kept when another replay is opened
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Settings {
+    // 1 is the game's zoom, before the screen's scale
+    pub zoom: f64,
+    // The bike in the middle; otherwise the game's classic camera
+    pub centered_camera: bool,
+    // Both bikes of a two player replay
+    pub split_screen: bool,
+    pub timer: bool,
+    pub minimap: bool,
+    // Zoom out when needed so every bike stays in view
+    pub auto_zoom: bool,
+    // Ghosts blue and see-through
+    pub translucent_ghosts: bool,
+    // Bikes and objects over every picture
+    pub pictures_in_background: bool,
+    // Start over after the end
+    pub looping: bool,
+    pub level: LevelOptions,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            zoom: 1.0,
+            centered_camera: true,
+            split_screen: true,
+            timer: true,
+            minimap: false,
+            auto_zoom: false,
+            translucent_ghosts: false,
+            pictures_in_background: true,
+            looping: true,
+            level: LevelOptions::default(),
+        }
+    }
+}
+
+// A replay, or a level on its own, ready to watch
+pub struct Content {
+    pub session: Session,
+    // A level without a replay, to look around
+    pub level_only: bool,
+    // Of the level's ground, to show all of it
+    pub bounds: Option<(Vec2, Vec2)>,
+    // From the level's top ten, in centiseconds
+    pub best_time: Option<i64>,
+    // When each bike finishes, in seconds
+    pub finish_times: Vec<Option<f64>>,
+    // Drawn with Across's graphics, which have no pictures, grass or gravity arrows
+    pub across: bool,
+}
+
+impl Content {
+    // What a replay or level loaded from a game folder or a page plays
+    pub fn new(loaded: &game_data::Loaded) -> Content {
+        let session = Session::new(
+            &loaded.level,
+            &loaded.rec,
+            &loaded.ghosts(),
+            loaded.settings.clone(),
+        );
+        let finish_times = match loaded.level_only {
+            true => Vec::new(),
+            false => loaded
+                .finish_times()
+                .into_iter()
+                .map(|t| t.map(replay::time_to_seconds))
+                .collect(),
+        };
+        Content {
+            session,
+            level_only: loaded.level_only,
+            bounds: camera::level_bounds(&loaded.level),
+            best_time: loaded.best_time,
+            finish_times,
+            across: loaded.settings.game.is_across(),
+        }
+    }
+}
+
+// What a tick did
+#[derive(Debug, Default)]
+pub struct Tick {
+    // When playing went on from where it was, the step it took, whose sounds play
+    pub step: Option<Step>,
+    // The time jumped since the last tick, so sounds in between aren't played
+    pub seeked: bool,
+    // The replay played to its end and stopped, which only happens without looping
+    pub ended: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Apples {
+    pub taken: i32,
+    pub total: i32,
+    // When the last one was taken, in seconds
+    pub last_time: Option<f64>,
+}
+
+pub struct Player {
+    content: Option<Content>,
+    settings: Settings,
+    playing: bool,
+    // Negative plays backwards
+    speed: f64,
+    // Seconds left of the pause at the end, 0 while not pausing
+    end_pause: f64,
+    seeked: bool,
+    // Of the view in device pixels, and device pixels per screen pixel
+    viewport: (u32, u32),
+    scale: f64,
+    // Shift of the camera from the bike, in meters
+    pan: Vec2,
+    // Look at this point instead of following the bike, after fitting the level
+    center: Option<Vec2>,
+    follow: BikeId,
+    // Zooming or moving the camera by hand pauses auto zoom until the camera is back on
+    // the bike
+    taken_over: bool,
+    auto_frame: AutoFrame,
+    // Real seconds of watching, which objects animate by, paused or not
+    object_clock: f64,
+}
+
+impl Player {
+    pub fn new(settings: Settings) -> Player {
+        Player {
+            content: None,
+            settings,
+            playing: true,
+            speed: 1.0,
+            end_pause: 0.0,
+            seeked: false,
+            viewport: (1, 1),
+            scale: 1.0,
+            pan: Vec2::default(),
+            center: None,
+            follow: BikeId(0),
+            taken_over: false,
+            auto_frame: AutoFrame::default(),
+            object_clock: 0.0,
+        }
+    }
+
+    // Shows `content`. Merging replays into the one playing, or leaving some out, is `merge`:
+    // it carries on from the same moment with the same view.
+    pub fn load(&mut self, mut content: Content, merge: bool) {
+        let previous = self
+            .content
+            .as_ref()
+            .filter(|c| merge && !c.level_only && !content.level_only)
+            .map(|c| c.session.time);
+        if let Some(time) = previous {
+            let time = time.min(content.session.duration());
+            content.session.seek(time);
+        }
+        let bikes = camera::bike_count(&content.session);
+        let level_only = content.level_only;
+        self.content = Some(content);
+        self.seeked = true;
+        if previous.is_some() {
+            if self.follow.0 >= bikes {
+                self.follow = BikeId(0);
+            }
+            return;
+        }
+        self.end_pause = 0.0;
+        self.pan = Vec2::default();
+        self.center = None;
+        self.follow = BikeId(0);
+        self.taken_over = false;
+        self.auto_frame = AutoFrame::default();
+        if level_only {
+            self.fit_level();
+        }
+    }
+
+    pub fn unload(&mut self) {
+        self.content = None;
+    }
+
+    pub fn content(&self) -> Option<&Content> {
+        self.content.as_ref()
+    }
+
+    pub fn session(&self) -> Option<&Session> {
+        self.content.as_ref().map(|c| &c.session)
+    }
+
+    pub fn level_only(&self) -> bool {
+        self.content.as_ref().is_some_and(|c| c.level_only)
+    }
+
+    pub fn across(&self) -> bool {
+        self.content.as_ref().is_some_and(|c| c.across)
+    }
+
+    // Moves time on by `dt` real seconds
+    pub fn tick(&mut self, dt: f64) -> Tick {
+        self.object_clock += dt;
+        let mut tick = Tick::default();
+        let playing = self.is_playing();
+        let (speed, looping) = (self.speed, self.settings.looping);
+        let Some(content) = &mut self.content else {
+            return tick;
+        };
+        let session = &mut content.session;
+        if !playing {
+            self.end_pause = 0.0;
+        } else if self.end_pause > 0.0 {
+            // At the end before looping, like the game
+            self.end_pause -= dt;
+            if self.end_pause <= 0.0 {
+                self.end_pause = 0.0;
+                let start = if speed >= 0.0 {
+                    0.0
+                } else {
+                    session.duration_seconds()
+                };
+                session.set_seconds(start);
+                self.seeked = true;
+            }
+        } else {
+            let duration = session.duration_seconds();
+            let t = session.seconds() + dt * speed;
+            let at_end = if speed >= 0.0 {
+                t >= duration
+            } else {
+                t <= 0.0
+            };
+            tick.step = session.set_seconds(t.clamp(0.0, duration));
+            if tick.step.is_none() {
+                self.seeked = true;
+            }
+            if at_end && looping {
+                self.end_pause = END_PAUSE;
+            } else if at_end {
+                self.playing = false;
+                tick.ended = speed >= 0.0;
+            }
+        }
+        tick.seeked = std::mem::take(&mut self.seeked);
+        tick
+    }
+
+    // Playing, which a level on its own never is
+    pub fn is_playing(&self) -> bool {
+        self.playing && self.content.as_ref().is_some_and(|c| !c.level_only)
+    }
+
+    pub fn set_playing(&mut self, playing: bool) {
+        self.playing = playing;
+    }
+
+    pub fn toggle_play(&mut self) {
+        if self.content.is_none() || self.level_only() {
+            return;
+        }
+        if !self.playing {
+            // Playing again from the end starts over
+            let (t, duration) = (self.time(), self.duration());
+            if self.speed > 0.0 && t >= duration {
+                self.seek(0.0);
+            }
+            if self.speed < 0.0 && t <= 0.0 {
+                self.seek(duration);
+            }
+        }
+        self.playing = !self.playing;
+    }
+
+    pub fn speed(&self) -> f64 {
+        self.speed
+    }
+
+    pub fn set_speed(&mut self, speed: f64) {
+        if speed.is_finite() && speed != 0.0 {
+            self.speed = speed;
+        }
+    }
+
+    // Current position and length in seconds
+    pub fn time(&self) -> f64 {
+        self.session().map_or(0.0, Session::seconds)
+    }
+
+    pub fn duration(&self) -> f64 {
+        self.session().map_or(0.0, Session::duration_seconds)
+    }
+
+    // Moves to `seconds`, which also ends the pause at the end
+    pub fn seek(&mut self, seconds: f64) {
+        let Some(content) = &mut self.content else {
+            return;
+        };
+        let session = &mut content.session;
+        let before = session.time;
+        session.set_seconds(seconds.clamp(0.0, session.duration_seconds()));
+        if session.time != before {
+            self.end_pause = 0.0;
+            self.seeked = true;
+        }
+    }
+
+    pub fn act(&mut self, action: Action) {
+        let level_only = self.level_only();
+        let across = self.across();
+        match action {
+            Action::TogglePlay => self.toggle_play(),
+            Action::Slower => self.set_speed(self.speed * SPEED_STEP),
+            Action::Faster => self.set_speed(self.speed / SPEED_STEP),
+            Action::NormalSpeed => self.speed = self.speed.signum(),
+            Action::Reverse => self.speed = -self.speed,
+            Action::SeekBack | Action::SeekForward if !level_only => {
+                let sign = if action == Action::SeekBack {
+                    -1.0
+                } else {
+                    1.0
+                };
+                self.seek(self.time() + sign * SEEK_SECONDS * self.speed.abs());
+            }
+            Action::StepBack | Action::StepForward if !level_only => {
+                let sign = if action == Action::StepBack {
+                    -1.0
+                } else {
+                    1.0
+                };
+                self.playing = false;
+                self.seek(self.time() + sign * FRAME_SECONDS);
+            }
+            Action::ZoomOut => self.zoom_by(1.0 / ZOOM_STEP),
+            Action::ZoomIn => self.zoom_by(ZOOM_STEP),
+            Action::FitLevel => self.fit_level(),
+            Action::Recenter => self.recenter(),
+            Action::FollowNext => self.follow_next(1),
+            Action::FollowPrevious => self.follow_next(-1),
+            Action::ToggleTimer => self.settings.timer = !self.settings.timer,
+            Action::ToggleMinimap => self.settings.minimap = !self.settings.minimap,
+            // These change nothing in Across, so they leave the settings alone there
+            Action::TogglePictures if !across => {
+                let level = &mut self.settings.level;
+                level.pictures = !level.pictures;
+                level.custom_sky = level.pictures;
+            }
+            Action::ToggleGrass if !across => {
+                self.settings.level.grass = !self.settings.level.grass;
+            }
+            Action::ToggleArrows if !across => {
+                self.settings.level.arrows = !self.settings.level.arrows;
+            }
+            Action::ShowEverything if !across => {
+                let level = &mut self.settings.level;
+                level.grass = true;
+                level.pictures = true;
+                level.custom_sky = true;
+            }
+            _ => {}
+        }
+    }
+
+    // `key` as the browser's KeyboardEvent.key names it. Returns whether it did something.
+    pub fn key(&mut self, key: &str) -> bool {
+        match action_for_key(key) {
+            Some(action) => {
+                self.act(action);
+                true
+            }
+            None => false,
+        }
+    }
+
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    // Size of the view in device pixels, and how many of them a screen pixel is
+    pub fn resize(&mut self, width: u32, height: u32, scale: f64) {
+        self.viewport = (width.max(1), height.max(1));
+        if scale.is_finite() && scale > 0.0 {
+            self.scale = scale;
+        }
+    }
+
+    // The zoom set, before the screen's scale
+    pub fn zoom(&self) -> f64 {
+        self.settings.zoom
+    }
+
+    // Zooming leaves the camera where it is, and pauses auto zoom until it is back on the bike
+    pub fn set_zoom(&mut self, zoom: f64) {
+        if !zoom.is_finite() || zoom <= 0.0 {
+            return;
+        }
+        let zoom = zoom.clamp(MIN_ZOOM, MAX_ZOOM);
+        if (zoom - self.settings.zoom).abs() > 1e-9 * self.settings.zoom {
+            self.taken_over = true;
+        }
+        self.settings.zoom = zoom;
+    }
+
+    // From the zoom on screen, which auto zoom may have made smaller than the one set
+    pub fn zoom_by(&mut self, factor: f64) {
+        self.set_zoom(self.shown_zoom() * factor);
+    }
+
+    // The zoom on screen, before the screen's scale
+    pub fn shown_zoom(&self) -> f64 {
+        match self.auto_frame.zoom() {
+            Some(zoom) if self.auto_zooming() => zoom / self.scale,
+            _ => self.settings.zoom,
+        }
+    }
+
+    // Drags the view by device pixels, right and down
+    pub fn pan_by(&mut self, dx: f64, dy: f64) {
+        let ppm = camera::pixels_per_meter(self.settings.zoom * self.scale);
+        let shift = Vec2::new(-dx / ppm, dy / ppm);
+        self.taken_over = true;
+        match &mut self.center {
+            Some(center) => *center = *center + shift,
+            None => self.pan = self.pan + shift,
+        }
+    }
+
+    // Shows the whole level and stops following the bike
+    pub fn fit_level(&mut self) {
+        let Some(bounds) = self.content.as_ref().and_then(|c| c.bounds) else {
+            return;
+        };
+        let (w, h) = self.viewport;
+        let (zoom, center) = camera::fit_bounds(bounds, [0, 0, w, h]);
+        self.settings.zoom = zoom / self.scale;
+        self.center = Some(center);
+    }
+
+    // Back to following the bike, with auto zoom again
+    pub fn recenter(&mut self) {
+        self.pan = Vec2::default();
+        self.center = None;
+        self.taken_over = false;
+        self.auto_frame = AutoFrame::default();
+    }
+
+    pub fn bike_count(&self) -> usize {
+        self.session().map_or(0, camera::bike_count)
+    }
+
+    // The bike followed, which a merge keeps
+    pub fn follow(&self) -> BikeId {
+        self.follow
+    }
+
+    pub fn set_follow(&mut self, bike: BikeId) {
+        self.follow = bike;
+    }
+
+    // Follows the next bike, or the previous one, and puts the camera on it
+    pub fn follow_next(&mut self, direction: isize) {
+        let n = self.bike_count() as isize;
+        if n > 1 {
+            let next = (self.follow.0 as isize + direction).rem_euclid(n);
+            self.follow = BikeId(next as usize);
+            self.recenter();
+        }
+    }
+
+    pub fn set_centered_camera(&mut self, centered: bool) {
+        self.settings.centered_camera = centered;
+    }
+
+    pub fn set_split_screen(&mut self, split: bool) {
+        self.settings.split_screen = split;
+    }
+
+    pub fn set_timer(&mut self, timer: bool) {
+        self.settings.timer = timer;
+    }
+
+    pub fn set_minimap(&mut self, minimap: bool) {
+        self.settings.minimap = minimap;
+    }
+
+    // Turning it on undoes a pause
+    pub fn set_auto_zoom(&mut self, auto_zoom: bool) {
+        if auto_zoom && !self.settings.auto_zoom {
+            self.taken_over = false;
+            self.auto_frame = AutoFrame::default();
+        }
+        self.settings.auto_zoom = auto_zoom;
+    }
+
+    pub fn set_translucent_ghosts(&mut self, translucent: bool) {
+        self.settings.translucent_ghosts = translucent;
+    }
+
+    pub fn set_pictures_in_background(&mut self, value: bool) {
+        self.settings.pictures_in_background = value;
+    }
+
+    pub fn set_looping(&mut self, looping: bool) {
+        self.settings.looping = looping;
+    }
+
+    pub fn set_level_options(&mut self, options: LevelOptions) {
+        self.settings.level = options;
+    }
+
+    fn auto_zooming(&self) -> bool {
+        self.settings.auto_zoom && !self.taken_over && self.center.is_none()
+    }
+
+    // Auto zoom is on but paused, since the camera was zoomed or moved by hand. recenter()
+    // resumes it.
+    pub fn auto_zoom_paused(&self) -> bool {
+        self.settings.auto_zoom && self.taken_over && !self.level_only() && self.bike_count() > 1
+    }
+
+    // The views of the next frame, `dt` real seconds after the last one: two for a split
+    // screen two player replay, otherwise one
+    pub fn views(&mut self, dt: f64) -> Vec<ViewParams> {
+        let auto_zoom = self.settings.auto_zoom && !self.taken_over;
+        let Some(content) = &self.content else {
+            return Vec::new();
+        };
+        let (w, h) = self.viewport;
+        let s = &self.settings;
+        let base = ViewParams {
+            follow: self.follow.0,
+            viewport: [0, 0, w, h],
+            zoom: s.zoom * self.scale,
+            camera: CameraMode::centered(s.centered_camera),
+            pan: self.pan,
+            // A level on its own has no time to show
+            timer: s.timer && !content.level_only,
+            minimap: s.minimap,
+            best_time: content.best_time,
+            center: self.center,
+        };
+        // A fixed point to look at is one view, never zoomed out for the bikes
+        let free = self.center.is_some();
+        let auto = (auto_zoom && !free).then_some((&mut self.auto_frame, dt));
+        // Following a merged replay shows that bike alone
+        let split = s.split_screen && !free && self.follow.0 < content.session.riders.len();
+        camera::layout_views(&content.session, base, (w, h), split, auto)
+    }
+
+    // How bikes and objects are drawn
+    pub fn render_options(&self) -> RenderOptions {
+        let s = &self.settings;
+        RenderOptions {
+            dynamic: DynamicOptions {
+                gravity_arrows: s.level.arrows,
+                animated_objects: s.level.animated_objects,
+                still_objects: s.level.still_objects,
+                pictures_in_background: s.pictures_in_background,
+                object_clock: Some(replay::seconds_to_time(self.object_clock)),
+            },
+            ghosts: GhostStyle::new(s.translucent_ghosts),
+            textures: TextureZoom::Stable,
+        }
+    }
+
+    // What the scene is built with. A change means building it again.
+    pub fn scene_options(&self) -> SceneOptions {
+        let level = &self.settings.level;
+        SceneOptions {
+            default_ground: !level.custom_sky,
+            default_sky: !level.custom_sky,
+            pictures: level.pictures,
+            grass: level.grass,
+            fancyboost: level.fancyboost,
+        }
+    }
+
+    // When bike `bike` finishes, in seconds, if it does
+    pub fn finish_time(&self, bike: BikeId) -> Option<f64> {
+        self.content.as_ref()?.finish_times.get(bike.0).copied()?
+    }
+
+    // The apples the followed bike has taken by now
+    pub fn apples(&self) -> Apples {
+        let Some(session) = self.session() else {
+            return Apples::default();
+        };
+        let rider = camera::followed(session, self.follow.0);
+        let mut apples = Apples {
+            total: session.total_apples,
+            ..Apples::default()
+        };
+        for event in rider
+            .ride
+            .events
+            .iter()
+            .take_while(|e| e.time <= session.time)
+        {
+            let food = usize::try_from(event.object_id)
+                .ok()
+                .and_then(|i| session.objects.get(i))
+                .is_some_and(|o| o.kind == ObjectType::Food);
+            if food {
+                apples.taken += 1;
+                apples.last_time = Some(replay::time_to_seconds(event.time));
+            }
+        }
+        apples
+    }
+}
+
+#[cfg(test)]
+mod tests;

@@ -1,0 +1,28 @@
+name: Fuzz
+
+# A short run of each parser on random input, to catch panics and huge allocations. Weekly
+# and on main, as it takes minutes.
+on:
+  push:
+    branches: ["main"]
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      # cargo-fuzz builds for the target it was itself built for, which for the prebuilt one
+      # is musl, where the sanitizer can't run. The runner's own target it is.
+      - working-directory: crates/elma-formats
+        run: |
+          host=$(rustc +nightly -vV | sed -n 's/^host: //p')
+          for target in $(cargo +nightly fuzz list); do
+            cargo +nightly fuzz run --target "$host" "$target" -- -max_total_time=30 -rss_limit_mb=1024 -malloc_limit_mb=512
+          done

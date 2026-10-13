@@ -1,0 +1,72 @@
+name: Builds
+
+# Builds rec2vid and recview for Windows and Linux, downloadable from the run's artifacts.
+# Tag a commit v<version> to also attach them to a GitHub release.
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p rec2vid -p recview
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory rectools-windows | Out-Null
+          Copy-Item target/release/rec2vid.exe, target/release/recview.exe, LICENSE.md rectools-windows
+          @"
+          rec2vid renders a replay to a video with ffmpeg. Install ffmpeg (winget install ffmpeg)
+          or put ffmpeg.exe next to rec2vid.exe. Run rec2vid --help for the options.
+
+          recview plays replays: open a .rec with it, or drop one on recview.exe.
+          "@ | Set-Content rectools-windows/README.txt
+          Compress-Archive -Path rectools-windows/* -DestinationPath rectools-windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rectools-windows
+          path: rectools-windows/
+      - if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: rectools-windows.zip
+
+  linux:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # recview's sound goes through ALSA
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: cargo build --release -p rec2vid -p recview
+      - name: Package
+        run: |
+          mkdir rectools-linux
+          cp target/release/rec2vid target/release/recview LICENSE.md rectools-linux/
+          cat > rectools-linux/README.txt <<'TEXT'
+          rec2vid renders a replay to a video with ffmpeg, which has to be installed (for example
+          apt install ffmpeg) or next to rec2vid. Run rec2vid --help for the options.
+
+          recview plays replays: recview <replay.rec>, or open one from its window with O.
+          TEXT
+          tar czf rectools-linux.tar.gz rectools-linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rectools-linux
+          path: rectools-linux/
+      - if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: rectools-linux.tar.gz

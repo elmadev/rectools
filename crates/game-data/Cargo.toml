@@ -1,0 +1,10 @@
+[package]
+name = "game-data"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+elma-formats.workspace = true
+replay.workspace = true

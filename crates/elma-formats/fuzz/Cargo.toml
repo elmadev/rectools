@@ -1,0 +1,58 @@
+[package]
+name = "elma-formats-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+elma-formats = { path = ".." }
+
+# Kept out of the main workspace, since it needs a nightly toolchain
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "rec"
+path = "fuzz_targets/rec.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lev"
+path = "fuzz_targets/lev.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lgr"
+path = "fuzz_targets/lgr.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "res"
+path = "fuzz_targets/res.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pic"
+path = "fuzz_targets/pic.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wav"
+path = "fuzz_targets/wav.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,8 @@
+[package]
+name = "framediff"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+publish = false
+
+[dependencies]

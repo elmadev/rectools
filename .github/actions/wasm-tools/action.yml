@@ -1,0 +1,16 @@
+name: wasm tools
+description: wasm-bindgen-cli at the version of the wasm-bindgen crate in Cargo.lock, and binaryen's wasm-opt
+
+runs:
+  using: composite
+  steps:
+    - id: version
+      shell: bash
+      run: echo "wasm-bindgen=$(awk '/^name = "wasm-bindgen"$/{getline; gsub(/"/,"",$3); print $3}' Cargo.lock)" >> "$GITHUB_OUTPUT"
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: wasm-bindgen-cli@${{ steps.version.outputs.wasm-bindgen }}
+    - shell: bash
+      run: |
+        curl -sSL https://github.com/WebAssembly/binaryen/releases/download/version_123/binaryen-version_123-x86_64-linux.tar.gz | tar xz -C "$RUNNER_TEMP"
+        echo "$RUNNER_TEMP/binaryen-version_123/bin" >> "$GITHUB_PATH"
