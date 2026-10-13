@@ -188,6 +188,22 @@ fn a_held_key_repeats_only_what_is_not_a_toggle() {
 }
 
 #[test]
+fn back_onto_the_bike_after_fitting_the_level_zooms_back() {
+    let mut p = player(10.0, 0);
+    p.set_zoom(2.0);
+    p.key("f", false);
+    assert!(!near(p.zoom(), 2.0));
+    p.key("f", false);
+    p.key("c", false);
+    assert!(near(p.zoom(), 2.0));
+    // Unless zoomed by hand since
+    p.key("f", false);
+    p.set_zoom(0.5);
+    p.key("c", false);
+    assert!(near(p.zoom(), 0.5));
+}
+
+#[test]
 fn following_the_next_bike_wraps_and_recenters() {
     let mut p = player(10.0, 2);
     p.pan_by(100.0, 0.0);

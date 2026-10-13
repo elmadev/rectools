@@ -175,6 +175,8 @@ pub struct Player {
     pan: Vec2,
     // Look at this point instead of following the bike, after fitting the level
     center: Option<Vec2>,
+    // The zoom before fitting the level, for going back onto the bike, unless zoomed since
+    zoom_before_fit: Option<f64>,
     follow: BikeId,
     // Zooming or moving the camera by hand pauses auto zoom until the camera is back on
     // the bike
@@ -197,6 +199,7 @@ impl Player {
             scale: 1.0,
             pan: Vec2::default(),
             center: None,
+            zoom_before_fit: None,
             follow: BikeId(0),
             taken_over: false,
             auto_frame: AutoFrame::default(),
@@ -468,6 +471,7 @@ impl Player {
         let zoom = zoom.clamp(MIN_ZOOM, MAX_ZOOM);
         if (zoom - self.settings.zoom).abs() > 1e-9 * self.settings.zoom {
             self.taken_over = true;
+            self.zoom_before_fit = None;
         }
         self.settings.zoom = zoom;
     }
@@ -503,12 +507,17 @@ impl Player {
         };
         let (w, h) = self.viewport;
         let (zoom, center) = camera::fit_bounds(bounds, [0, 0, w, h]);
+        self.zoom_before_fit.get_or_insert(self.settings.zoom);
         self.settings.zoom = zoom / self.scale;
         self.center = Some(center);
     }
 
-    // Back to following the bike, with auto zoom again
+    // Back to following the bike, with auto zoom again, at the zoom from before fitting the
+    // level
     pub fn recenter(&mut self) {
+        if let Some(zoom) = self.zoom_before_fit.take() {
+            self.settings.zoom = zoom;
+        }
         self.pan = Vec2::default();
         self.center = None;
         self.taken_over = false;
