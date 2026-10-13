@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.6 - 2026-10-13
+
+- Across replays drew only the timer in browsers without WebGPU, which use WebGL2.
+
 ## 0.1.5 - 2026-10-13
 
 - Grass no longer flickers: grass pieces could leave a row of gaps that came and went
