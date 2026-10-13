@@ -665,8 +665,8 @@ impl Viewer {
     }
 
     // `key` as KeyboardEvent.key names it. Returns whether it is a shortcut.
-    pub fn key(&mut self, key: &str) -> bool {
-        self.player.key(key)
+    pub fn key(&mut self, key: &str, repeat: bool) -> bool {
+        self.player.key(key, repeat)
     }
 
     pub fn act(&mut self, action: Action) {

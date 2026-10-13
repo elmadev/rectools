@@ -430,10 +430,13 @@ impl Player {
     }
 
     // `key` as the browser's KeyboardEvent.key names it. Returns whether it did something.
-    pub fn key(&mut self, key: &str) -> bool {
+    // A key pressed, or `repeat`ed by being held down. Whether it is one of the player's.
+    pub fn key(&mut self, key: &str, repeat: bool) -> bool {
         match action_for_key(key) {
             Some(action) => {
-                self.act(action);
+                if !repeat || action.repeats() {
+                    self.act(action);
+                }
                 true
             }
             None => false,

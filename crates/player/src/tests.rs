@@ -157,33 +157,44 @@ fn keys_seek_by_the_speed_and_step_frames() {
     let mut p = player(10.0, 0);
     p.seek(5.0);
     p.set_speed(2.0);
-    assert!(p.key("ArrowRight"));
+    assert!(p.key("ArrowRight", false));
     assert!(near(p.time(), 5.0 + 2.0 * SEEK_SECONDS));
-    p.key(",");
+    p.key(",", false);
     assert!(!p.is_playing());
     assert!(near(p.time(), 5.0 + 2.0 * SEEK_SECONDS - FRAME_SECONDS));
-    assert!(!p.key("x"));
+    assert!(!p.key("x", false));
 }
 
 #[test]
 fn speed_keys_keep_the_direction() {
     let mut p = player(10.0, 0);
-    p.key("-");
+    p.key("-", false);
     assert!(near(p.speed(), SPEED_STEP));
-    p.key("r");
+    p.key("r", false);
     assert!(near(p.speed(), -SPEED_STEP));
-    p.key("Backspace");
+    p.key("Backspace", false);
     assert_eq!(p.speed(), -1.0);
+}
+
+#[test]
+fn a_held_key_repeats_only_what_is_not_a_toggle() {
+    let mut p = player(10.0, 0);
+    p.key("r", false);
+    assert!(p.key("r", true));
+    assert!(near(p.speed(), -1.0));
+    p.key("-", false);
+    p.key("-", true);
+    assert!(near(p.speed(), -SPEED_STEP * SPEED_STEP));
 }
 
 #[test]
 fn following_the_next_bike_wraps_and_recenters() {
     let mut p = player(10.0, 2);
     p.pan_by(100.0, 0.0);
-    p.key("N");
+    p.key("N", false);
     assert_eq!(p.follow(), BikeId(2));
     assert_eq!(p.pan, Vec2::default());
-    p.key("n");
+    p.key("n", false);
     assert_eq!(p.follow(), BikeId(0));
 }
 
@@ -194,7 +205,7 @@ fn moving_the_camera_pauses_auto_zoom_until_recentered() {
     assert!(!p.auto_zoom_paused());
     p.pan_by(10.0, 0.0);
     assert!(p.auto_zoom_paused());
-    p.key("c");
+    p.key("c", false);
     assert!(!p.auto_zoom_paused());
     p.set_zoom(2.0);
     assert!(p.auto_zoom_paused());
@@ -215,7 +226,7 @@ fn auto_zoom_zooms_out_to_show_the_ghost() {
     assert!(views[0].zoom < 4.0);
     // Zooming in goes from the zoom on screen
     let shown = p.shown_zoom();
-    p.key("e");
+    p.key("e", false);
     assert!(near(p.zoom(), shown * ZOOM_STEP));
 }
 
@@ -243,17 +254,17 @@ fn split_screen_only_while_following_a_rider_of_the_replay() {
     p.set_follow(BikeId(2));
     assert_eq!(p.views(0.0).len(), 1);
     p.set_follow(BikeId(0));
-    p.key("f");
+    p.key("f", false);
     assert_eq!(p.views(0.0).len(), 1);
 }
 
 #[test]
 fn fitting_the_level_uses_the_screen_scale() {
     let mut p = player(10.0, 0);
-    p.key("f");
+    p.key("f", false);
     let one = p.zoom();
     p.resize(1600, 1200, 2.0);
-    p.key("f");
+    p.key("f", false);
     // The same view on twice the pixels is the same zoom before the scale
     assert!(near(p.zoom(), one));
     assert!(near(p.views(0.0)[0].zoom, 2.0 * one));
@@ -283,13 +294,13 @@ fn level_keys_do_nothing_in_across() {
         },
         false,
     );
-    p.key("g");
-    p.key("p");
+    p.key("g", false);
+    p.key("p", false);
     assert_eq!(p.settings().level, LevelOptions::default());
     p.load(content(1.0, 0), false);
-    p.key("p");
+    p.key("p", false);
     assert!(!p.settings().level.pictures && !p.settings().level.custom_sky);
     assert!(!p.scene_options().pictures && p.scene_options().default_sky);
-    p.key("G");
+    p.key("G", false);
     assert_eq!(p.settings().level, LevelOptions::default());
 }

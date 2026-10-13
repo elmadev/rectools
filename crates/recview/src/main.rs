@@ -46,7 +46,7 @@ The settings, the sound and the zoom are remembered for the next launch.
 
 Keys, the same as the web player's:
   space               play / pause (a click too)
-  - / +               slower / faster
+  - / + or =          slower / faster
   backspace           normal speed
   R                   reverse
   left, right         back / forward 2.5 seconds
@@ -801,7 +801,7 @@ impl App {
     }
 
     // A key pressed: the shared keys go to the player, then come recview's own
-    fn key(&mut self, event_loop: &ActiveEventLoop, key: &Key) {
+    fn key(&mut self, event_loop: &ActiveEventLoop, key: &Key, repeat: bool) {
         let name = match key {
             Key::Named(NamedKey::Space) => " ".to_string(),
             Key::Named(NamedKey::ArrowLeft) => "ArrowLeft".to_string(),
@@ -811,7 +811,8 @@ impl App {
             Key::Character(c) => c.to_string(),
             _ => return,
         };
-        if self.player.key(&name) {
+        // recview's own keys are all toggles, which a held key flips only once
+        if self.player.key(&name, repeat) || repeat {
             return;
         }
         let shift = self.modifiers.shift_key();
@@ -905,7 +906,7 @@ impl ApplicationHandler<Vec<PathBuf>> for App {
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state == ElementState::Pressed {
-                    self.key(event_loop, &event.logical_key);
+                    self.key(event_loop, &event.logical_key, event.repeat);
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {

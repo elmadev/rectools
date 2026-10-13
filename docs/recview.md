@@ -45,7 +45,7 @@ The same as the web player's:
 | Key | |
 | --- | --- |
 | Space, click | Play / pause |
-| `-` / `+` | Slower / faster |
+| `-` / `+` or `=` | Slower / faster |
 | Backspace | Normal speed |
 | R | Reverse |
 | ← / → | Back / forward 2.5 seconds |

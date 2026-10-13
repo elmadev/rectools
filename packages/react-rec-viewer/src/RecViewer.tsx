@@ -706,7 +706,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     const target = e.target as HTMLElement;
     if (target.tagName === "SELECT" || (target.tagName === "INPUT" && e.key.startsWith("Arrow"))) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    if (viewerRef.current?.key(e.key)) {
+    if (viewerRef.current?.key(e.key, e.repeat)) {
       e.preventDefault();
       sync();
     }

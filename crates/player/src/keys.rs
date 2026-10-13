@@ -32,6 +32,23 @@ pub enum Action {
     ShowEverything,
 }
 
+impl Action {
+    // Whether holding the key down does it again and again. A toggle only flips once.
+    pub fn repeats(self) -> bool {
+        matches!(
+            self,
+            Action::Slower
+                | Action::Faster
+                | Action::SeekBack
+                | Action::SeekForward
+                | Action::StepBack
+                | Action::StepForward
+                | Action::ZoomOut
+                | Action::ZoomIn
+        )
+    }
+}
+
 struct Binding {
     keys: &'static [&'static str],
     action: Action,
@@ -163,7 +180,7 @@ const fn level(keys: &'static str, description: &'static str, elma_only: bool) -
 
 pub const KEYS: &[KeyHelp] = &[
     help("Space", "Play / pause"),
-    help("- / +", "Slower / faster"),
+    help("- / + or =", "Slower / faster"),
     help("Backspace", "Normal speed"),
     help("R", "Reverse"),
     help("← / →", "Back / forward 2.5 seconds"),
