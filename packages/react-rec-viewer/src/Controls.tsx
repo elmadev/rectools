@@ -326,7 +326,7 @@ export function Controls(p: ControlsProps) {
             onPointerUp={() => (p.scrubbing.current = false)}
             onPointerCancel={() => (p.scrubbing.current = false)}
             onInput={(e) => p.onSeek(Number(e.currentTarget.value))}
-            style={{ flex: "1 1 120px", minWidth: 80, touchAction: "none" }}
+            style={{ flex: "1 1 120px", minWidth: 80, touchAction: "none", accentColor: "#0075ff" }}
           />
           <span style={numbers}>
             <span ref={p.timeRef}>{formatTime(0)}</span> / {formatTime(p.duration)}
