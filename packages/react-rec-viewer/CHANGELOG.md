@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3 - 2026-10-13
+
+- A click that closes the settings no longer plays or pauses.
+- The seek bar is blue in dark mode too, rather than muted where it has played.
+
 ## 0.1.2 - 2026-10-13
 
 - At the end of a replay the timer, `time()` and `duration()` show its real time, as
