@@ -69,13 +69,20 @@ fn vs_instance(@builtin(vertex_index) vertex: u32, instance: InstanceIn) -> Vert
     );
     let st = corners[vertex];
     let world = instance.origin + instance.axis_u * st.x + instance.axis_v * st.y;
-    // The game samples bikes at pixel corners rather than centers
-    var corner = view.corner - vec2<f32>(0.5, 0.5) / view.pixels_per_meter;
-    if (instance.snap == 1u) {
-        corner = view.level_corner;
-    }
     var out: VertexOut;
-    out.position = to_clip(world, corner, instance.depth);
+    if (instance.snap == 1u) {
+        // The level's pictures can have their edges on pixel centers, and where two meet,
+        // such as grass pieces, each works its edge out a little differently. Rounded so they
+        // meet exactly, and moved off the centers like the polygons, so that rounding doesn't
+        // change from frame to frame which pixels they cover, or leave gaps between them.
+        let pixels = round((world - view.level_corner) * view.pixels_per_meter * 64.0) / 64.0;
+        let nudged = pixels + vec2<f32>(-0.01, 0.01);
+        out.position = vec4<f32>(nudged / view.size * 2.0 - vec2<f32>(1.0, 1.0), instance.depth, 1.0);
+    } else {
+        // The game samples bikes at pixel corners rather than centers
+        let corner = view.corner - vec2<f32>(0.5, 0.5) / view.pixels_per_meter;
+        out.position = to_clip(world, corner, instance.depth);
+    }
     out.st = st;
     out.world = world;
     out.image = instance.image;
