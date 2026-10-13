@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.4 - 2026-10-13
+
+- Renamed from `@rectools/react-rec-viewer`, with the repository moved to
+  [elmadev/rectools](https://github.com/elmadev/rectools).
+
 ## 0.1.3 - 2026-10-13
 
 - A click that closes the settings no longer plays or pauses.

@@ -6,7 +6,7 @@ SuperCross) play too.
 
 - `recview` plays replays in a window, with sound. See [docs/recview.md](docs/recview.md).
 - `rec2vid` renders a replay to a video with ffmpeg (`rec2vid --help`).
-- [`@rectools/react-rec-viewer`](packages/react-rec-viewer) plays replays in the browser.
+- [`@elmadev/react-rec-viewer`](packages/react-rec-viewer) plays replays in the browser.
 
 The game data (`elma.res`, `across.res`, LGR files, levels) is not included.
 

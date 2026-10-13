@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds @rectools/react-rec-viewer and copies it over the one installed in a site, to try
+# Builds @elmadev/react-rec-viewer and copies it over the one installed in a site, to try
 # the player there before it is published:
 #
 #   scripts/try-in-site.sh ~/projects/elmaonline-site/web
@@ -11,7 +11,7 @@ set -eu
 site=$(cd "${1:?usage: scripts/try-in-site.sh <site folder with package.json>}" && pwd)
 root=$(cd "$(dirname "$0")/.." && pwd)
 pkg="$root/packages/react-rec-viewer"
-dest="$site/node_modules/@rectools/react-rec-viewer"
+dest="$site/node_modules/@elmadev/react-rec-viewer"
 
 (cd "$root" && pnpm build)
 

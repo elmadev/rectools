@@ -1,12 +1,12 @@
 {
-  "name": "@rectools/react-rec-viewer",
-  "version": "0.1.3",
+  "name": "@elmadev/react-rec-viewer",
+  "version": "0.1.4",
   "description": "Elasto Mania replay viewer for React, drawn with WebGPU or WebGL2",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE.md",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Ben3eeE/rectools.git",
+    "url": "git+https://github.com/elmadev/rectools.git",
     "directory": "packages/react-rec-viewer"
   },
   "exports": {

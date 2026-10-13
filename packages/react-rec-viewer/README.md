@@ -1,4 +1,4 @@
-# @rectools/react-rec-viewer
+# @elmadev/react-rec-viewer
 
 Plays Elasto Mania and Across replays, and shows levels, in React. It draws with WebGPU, or
 WebGL2 where WebGPU isn't available, using rectools' renderer.
@@ -10,7 +10,7 @@ configuration.
 ## From URLs: `RecPlayer`
 
 ```jsx
-import { RecPlayer } from "@rectools/react-rec-viewer";
+import { RecPlayer } from "@elmadev/react-rec-viewer";
 
 <RecPlayer
   levUrl="https://api.elma.online/dl/level/123"

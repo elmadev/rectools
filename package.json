@@ -2,7 +2,7 @@
   "name": "rectools",
   "private": true,
   "scripts": {
-    "build": "pnpm --filter @rectools/react-rec-viewer build"
+    "build": "pnpm --filter @elmadev/react-rec-viewer build"
   },
   "packageManager": "pnpm@12.11.2"
 }

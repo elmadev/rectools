@@ -1,7 +1,7 @@
 name: Publish
 
 # Tag a commit react-rec-viewer-v<version>, matching the version in
-# packages/react-rec-viewer/package.json, to publish @rectools/react-rec-viewer to npm
+# packages/react-rec-viewer/package.json, to publish @elmadev/react-rec-viewer to npm
 on:
   push:
     tags: ["react-rec-viewer-v*"]
@@ -30,6 +30,6 @@ jobs:
           version=$(node -p "require('./packages/react-rec-viewer/package.json').version")
           test "${GITHUB_REF_NAME}" = "react-rec-viewer-v${version}"
       - run: pnpm build
-      - run: pnpm --filter @rectools/react-rec-viewer publish --access public --no-git-checks --provenance
+      - run: pnpm --filter @elmadev/react-rec-viewer publish --access public --no-git-checks --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
