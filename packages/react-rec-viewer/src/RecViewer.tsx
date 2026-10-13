@@ -679,6 +679,25 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
 
   // Keep the screen on while playing
   const playing = state?.playing ?? false;
+
+  // In full screen the controls lie over the view, and hide while playing when the mouse is
+  // still, like a video's
+  const [idle, setIdle] = useState(false);
+  const overControls = useRef(false);
+  const idleTimer = useRef<number | undefined>(undefined);
+  const wake = useCallback(() => {
+    setIdle(false);
+    window.clearTimeout(idleTimer.current);
+    if (!fullscreen || !playing) return;
+    idleTimer.current = window.setTimeout(() => {
+      if (!overControls.current && !settingsOpen.current) setIdle(true);
+    }, 2500);
+  }, [fullscreen, playing]);
+  useEffect(() => {
+    wake();
+    return () => window.clearTimeout(idleTimer.current);
+  }, [wake]);
+  const controlsHidden = fullscreen && idle;
   useEffect(() => {
     if (!wakeLock || !playing || !navigator.wakeLock) return;
     let lock: WakeLockSentinel | undefined;
@@ -697,6 +716,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
   }, [wakeLock, playing]);
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    wake();
     if (e.key === "Escape" && cssFullscreen) {
       setCssFullscreen(false);
       return;
@@ -735,7 +755,11 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
       className={className}
       tabIndex={0}
       onKeyDown={onKeyDown}
-      onPointerDownCapture={() => (pressClosesSettings.current = settingsOpen.current)}
+      onPointerDownCapture={() => {
+        pressClosesSettings.current = settingsOpen.current;
+        wake();
+      }}
+      onPointerMove={wake}
       onPointerDown={() => containerRef.current?.focus({ preventScroll: true })}
       style={{
         position: "relative",
@@ -744,6 +768,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
         outline: "none",
         ...style,
         ...(cssFullscreen ? fullStyle : nativeFullscreen ? { width: "100%", height: "100%", background: "#000" } : {}),
+        ...(controlsHidden ? { cursor: "none" } : {}),
       }}
     >
       <canvas
@@ -764,67 +789,85 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
         </div>
       )}
       {controls && (
-        <Controls
-          levelOnly={s?.levelOnly ?? false}
-          across={s?.across ?? false}
-          loaded={loaded}
-          playing={playing}
-          speed={s?.speed ?? 1}
-          zoom={s?.zoom ?? defaultZoom}
-          duration={s?.duration ?? 0}
-          bikeCount={bikeCount}
-          follow={s?.follow ?? 0}
-          bikeLabels={Array.from({ length: bikeCount }, (_, i) => {
-            const name = bikeLabels?.[i] || `Bike ${i + 1}`;
-            const finish = finishTimes[i];
-            return finish === undefined ? name : `${name} ${formatTime(finish)}`;
-          })}
-          fullscreen={fullscreen}
-          timeRef={timeRef}
-          scrubRef={scrubRef}
-          applesRef={applesRef}
-          scrubbing={scrubbing}
-          settingsOpen={settingsOpen}
-          onTogglePlay={togglePlay}
-          onSeek={seek}
-          onSlower={() => act(Action.Slower)}
-          onFaster={() => act(Action.Faster)}
-          onReverse={() => act(Action.Reverse)}
-          onZoomOut={() => act(Action.ZoomOut)}
-          onZoomIn={() => act(Action.ZoomIn)}
-          onFitLevel={fitLevel}
-          // Choosing whom to follow puts the camera on them
-          onFollow={(bike) =>
-            change((v) => {
-              v.setFollow(bike);
-              v.recenter();
-            })
+        <div
+          onPointerEnter={() => (overControls.current = true)}
+          onPointerLeave={() => (overControls.current = false)}
+          style={
+            fullscreen
+              ? {
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  transition: "opacity 0.3s",
+                  opacity: controlsHidden ? 0 : 1,
+                  pointerEvents: controlsHidden ? "none" : undefined,
+                }
+              : undefined
           }
-          onFullscreen={toggleFullscreen}
-          centeredCamera={s?.centeredCamera ?? true}
-          onCenteredCamera={(x) => change((v) => v.setCenteredCamera(x))}
-          timer={s?.timer ?? true}
-          onTimer={(x) => change((v) => v.setTimer(x))}
-          minimap={s?.minimap ?? false}
-          onMinimap={(x) => change((v) => v.setMinimap(x))}
-          picturesInBackground={s?.picturesInBackground ?? true}
-          onPicturesInBackground={(x) => change((v) => v.setPicturesInBackground(x))}
-          autoZoom={s?.autoZoom ?? false}
-          onAutoZoom={(x) => change((v) => v.setAutoZoom(x))}
-          translucentGhosts={s?.translucentGhosts ?? false}
-          onTranslucentGhosts={(x) => change((v) => v.setTranslucentGhosts(x))}
-          canDrawTranslucentGhosts={canTranslucent}
-          autoPlaySetting={autoPlaySetting}
-          onAutoPlaySetting={onAutoPlaySettingChange}
-          lgrChoices={lgrChoices}
-          lgrChoice={lgrChoice ?? null}
-          onLgrChoice={onLgrChoiceChange}
-          onSettingsOpen={onSettingsOpen}
-          levelOptions={s?.levelOptions ?? DEFAULT_LEVEL_OPTIONS}
-          onLevelOptions={(o) =>
-            change((v) => applyLevelOptions(v, { ...(stateRef.current?.levelOptions ?? DEFAULT_LEVEL_OPTIONS), ...o }))
-          }
-        />
+        >
+          <Controls
+            levelOnly={s?.levelOnly ?? false}
+            across={s?.across ?? false}
+            loaded={loaded}
+            playing={playing}
+            speed={s?.speed ?? 1}
+            zoom={s?.zoom ?? defaultZoom}
+            duration={s?.duration ?? 0}
+            bikeCount={bikeCount}
+            follow={s?.follow ?? 0}
+            bikeLabels={Array.from({ length: bikeCount }, (_, i) => {
+              const name = bikeLabels?.[i] || `Bike ${i + 1}`;
+              const finish = finishTimes[i];
+              return finish === undefined ? name : `${name} ${formatTime(finish)}`;
+            })}
+            fullscreen={fullscreen}
+            timeRef={timeRef}
+            scrubRef={scrubRef}
+            applesRef={applesRef}
+            scrubbing={scrubbing}
+            settingsOpen={settingsOpen}
+            onTogglePlay={togglePlay}
+            onSeek={seek}
+            onSlower={() => act(Action.Slower)}
+            onFaster={() => act(Action.Faster)}
+            onReverse={() => act(Action.Reverse)}
+            onZoomOut={() => act(Action.ZoomOut)}
+            onZoomIn={() => act(Action.ZoomIn)}
+            onFitLevel={fitLevel}
+            // Choosing whom to follow puts the camera on them
+            onFollow={(bike) =>
+              change((v) => {
+                v.setFollow(bike);
+                v.recenter();
+              })
+            }
+            onFullscreen={toggleFullscreen}
+            centeredCamera={s?.centeredCamera ?? true}
+            onCenteredCamera={(x) => change((v) => v.setCenteredCamera(x))}
+            timer={s?.timer ?? true}
+            onTimer={(x) => change((v) => v.setTimer(x))}
+            minimap={s?.minimap ?? false}
+            onMinimap={(x) => change((v) => v.setMinimap(x))}
+            picturesInBackground={s?.picturesInBackground ?? true}
+            onPicturesInBackground={(x) => change((v) => v.setPicturesInBackground(x))}
+            autoZoom={s?.autoZoom ?? false}
+            onAutoZoom={(x) => change((v) => v.setAutoZoom(x))}
+            translucentGhosts={s?.translucentGhosts ?? false}
+            onTranslucentGhosts={(x) => change((v) => v.setTranslucentGhosts(x))}
+            canDrawTranslucentGhosts={canTranslucent}
+            autoPlaySetting={autoPlaySetting}
+            onAutoPlaySetting={onAutoPlaySettingChange}
+            lgrChoices={lgrChoices}
+            lgrChoice={lgrChoice ?? null}
+            onLgrChoice={onLgrChoiceChange}
+            onSettingsOpen={onSettingsOpen}
+            levelOptions={s?.levelOptions ?? DEFAULT_LEVEL_OPTIONS}
+            onLevelOptions={(o) =>
+              change((v) => applyLevelOptions(v, { ...(stateRef.current?.levelOptions ?? DEFAULT_LEVEL_OPTIONS), ...o }))
+            }
+          />
+        </div>
       )}
     </div>
   );
