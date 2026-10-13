@@ -639,7 +639,15 @@ impl Player {
                 object_clock: Some(replay::seconds_to_time(self.object_clock)),
             },
             ghosts: GhostStyle::new(s.translucent_ghosts),
-            textures: TextureZoom::Stable,
+            // Like the game, the level at whole pixels with its textures sized for the zoom, so
+            // they move with it. Otherwise a zoom that isn't a whole number of pixels per
+            // texture pixel, as on a scaled screen, makes them shimmer as the camera moves.
+            // Auto zoom changes the zoom all the time, where that would make them jump.
+            textures: if self.auto_zooming() {
+                TextureZoom::Stable
+            } else {
+                TextureZoom::Game
+            },
         }
     }
 

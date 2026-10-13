@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Grass and ground no longer shimmer when the camera moves on a scaled screen or when
+  zoomed.
+
 ## 0.1.7 - 2026-10-13
 
 - The Across timer is in the one color Across draws it in, rather than Elma's.
