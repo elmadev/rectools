@@ -421,12 +421,17 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     else console.error(error);
   }, []);
 
+  // The canvas's size in device pixels, exactly, where the browser tells it: the size in CSS
+  // pixels times the scale is off by a fraction on a scaled screen, and the browser then
+  // stretches the picture to fit, which makes rows of pixels jump as the camera moves
+  const devicePixels = useRef<{ w: number; h: number } | null>(null);
   const syncSize = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const w = Math.max(1, Math.round(rect.width * dpr()));
-    const h = Math.max(1, Math.round(rect.height * dpr()));
+    const exact = devicePixels.current;
+    const w = Math.max(1, exact ? exact.w : Math.round(rect.width * dpr()));
+    const h = Math.max(1, exact ? exact.h : Math.round(rect.height * dpr()));
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
@@ -558,8 +563,18 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const observer = new ResizeObserver(syncSize);
-    observer.observe(canvas);
+    const observer = new ResizeObserver((entries) => {
+      const size = entries[0]?.devicePixelContentBoxSize?.[0];
+      if (size) devicePixels.current = { w: size.inlineSize, h: size.blockSize };
+      syncSize();
+    });
+    try {
+      // Also told when moving the canvas changes how it lines up with the device pixels
+      observer.observe(canvas, { box: "device-pixel-content-box" });
+    } catch {
+      // Safari has no device pixel sizes
+      observer.observe(canvas);
+    }
     syncSize();
     return () => observer.disconnect();
   }, [viewerReady, syncSize]);
