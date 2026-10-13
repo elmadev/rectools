@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.5 - 2026-10-13
+
+- Grass no longer flickers: grass pieces could leave a row of gaps that came and went
+  as the camera moved, and on a scaled screen the browser stretched the picture slightly.
+- In full screen the controls lie over the view and hide while playing when the mouse is
+  still.
+- Holding a key repeats only what isn't a toggle, so holding R no longer flips back and
+  forth. The key list names `=` next to `+`.
+- C after F goes back to the zoom from before F, unless zoomed since.
+
 ## 0.1.4 - 2026-10-13
 
 - Renamed from `@rectools/react-rec-viewer`, with the repository moved to
