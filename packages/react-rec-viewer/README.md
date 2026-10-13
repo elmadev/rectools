@@ -108,5 +108,9 @@ full screen.
 `wasm32-unknown-unknown` target and `wasm-bindgen-cli` at the version in `Cargo.lock`, and
 uses binaryen's `wasm-opt` when it is installed.
 
+To try a change in a site, `scripts/try-in-site.sh <site folder>` builds the package and copies
+it over the one in the site's `node_modules`. `yarn install --check-files` in the site puts the
+published one back.
+
 To publish, push a tag `react-rec-viewer-v<version>` matching `package.json`. The workflow
 needs an `NPM_TOKEN` secret.
