@@ -8,7 +8,7 @@ use crate::instance::{Instance, M2P, mode, snap_to_pixel_center};
 use crate::options::{CameraMode, RenderOptions, TextureZoom, ViewParams};
 use crate::scene::{Look, Scene, TextureRef, dynamic_instances};
 use bytemuck::{Pod, Zeroable};
-use replay::{Rider, Session, TIME_TO_CENTISECONDS, Vec2};
+use replay::{Session, TIME_TO_CENTISECONDS, Vec2};
 use std::ops::Range;
 
 pub(crate) const UNIFORM_STRIDE: u64 = 256;
@@ -204,14 +204,11 @@ pub fn plan(
             &options.dynamic,
             scratch,
         );
-        // The timer stops when the followed replay ends, even if other bikes go on
-        let end = match followed_ghost {
-            Some(ghost) => ghost.duration(),
-            None => session
-                .riders
-                .iter()
-                .map(Rider::duration)
-                .fold(0.0, f64::max),
+        // The timer stops when the followed replay ends, even if other bikes go on, and then
+        // shows its time
+        let shown = match followed_ghost {
+            Some(ghost) => ghost.timer_centiseconds(session.time),
+            None => session.main_timer_centiseconds(session.time),
         };
 
         let timer_start = timer_data.len() as u32;
@@ -229,7 +226,7 @@ pub fn plan(
                 params.viewport[3] as i32,
                 params.best_time,
                 flagtag,
-                centiseconds(session.time.min(end)),
+                shown,
             );
             timer_data.extend(
                 rects

@@ -46,6 +46,24 @@ pub fn seconds_to_time(seconds: f64) -> f64 {
     seconds * 1000.0 * MILLISECONDS_TO_PHYS_TIME
 }
 
+// A finish time in hundredths as elma.online shows it: elmajs's getTime rounds the game
+// time down to milliseconds, then hundredths
+pub fn finish_centiseconds(time: f64) -> i64 {
+    let ms = (time * (0.001 / (STOPWATCH_MULTIPLIER * STOPWATCH_TO_PHYS_TIME)) * 1000.0).floor();
+    (ms / 10.0).floor() as i64
+}
+
+// An unfinished ride's time in hundredths, from its frames, rounded like elmajs's getTime
+pub fn frames_centiseconds(ride: &Ride) -> i64 {
+    let ms = (ride.frames.len() as f64 * (1000.0 / ride.frame_rate)).round();
+    (ms / 10.0).floor() as i64
+}
+
+// Hundredths as seconds, half a hundredth over so rounding down gives them back
+pub fn centiseconds_to_seconds(centiseconds: i64) -> f64 {
+    (centiseconds as f64 + 0.5) / 100.0
+}
+
 pub fn time_to_seconds(time: f64) -> f64 {
     time / (1000.0 * MILLISECONDS_TO_PHYS_TIME)
 }
@@ -284,6 +302,11 @@ pub struct Rider {
     pub gravity: Gravity,
     pub apple_count: i32,
     pub finish_time: Option<f64>,
+    // The replay's time, which the timer shows at its end: when it finishes, which can be a
+    // moment after the last frame, or else the length of its frames, like elmajs's getTime.
+    // As game time, and in hundredths rounded like elmajs.
+    pub end: f64,
+    pub end_centiseconds: i64,
     event_index: usize,
     finished: bool,
 }
@@ -291,6 +314,8 @@ pub struct Rider {
 impl Rider {
     pub fn new(ride: Arc<Ride>) -> Rider {
         let (pose, _) = interpolate(&ride, 0.0);
+        let end = ride.frames.len() as f64 * time_per_frame(&ride);
+        let end_centiseconds = frames_centiseconds(&ride);
         Rider {
             ride,
             pose,
@@ -298,8 +323,20 @@ impl Rider {
             gravity: Gravity::Down,
             apple_count: 0,
             finish_time: None,
+            end,
+            end_centiseconds,
             event_index: 0,
             finished: false,
+        }
+    }
+
+    // What the timer shows at `time`, in hundredths: the replay's time once its last frame is
+    // reached
+    pub fn timer_centiseconds(&self, time: f64) -> i64 {
+        if time >= self.duration() {
+            self.end_centiseconds
+        } else {
+            (time.min(self.end) * TIME_TO_CENTISECONDS) as i64
         }
     }
 
@@ -540,6 +577,26 @@ pub struct Session {
 
 impl Session {
     pub fn new(level: &Level, rec: &Rec, ghosts: &[Arc<Ride>], settings: Settings) -> Session {
+        let mut session = Session::unplayed(level, rec, ghosts, settings);
+        // Each bike's end is when it finishes, which its touches of the objects tell. A two
+        // player replay's is its latest finish, like elmajs's getTime.
+        if let Some(finish) = finishes(&session).into_iter().flatten().reduce(f64::max) {
+            for rider in &mut session.riders {
+                rider.end = finish;
+                rider.end_centiseconds = finish_centiseconds(finish);
+            }
+        }
+        for ghost in &mut session.ghosts {
+            if let Some(finish) = finish_time(level, rec, &ghost.ride, session.settings.clone()) {
+                ghost.end = finish;
+                ghost.end_centiseconds = finish_centiseconds(finish);
+            }
+        }
+        session
+    }
+
+    // A session whose riders' ends are only the length of their frames
+    fn unplayed(level: &Level, rec: &Rec, ghosts: &[Arc<Ride>], settings: Settings) -> Session {
         let mut seed = settings.seed;
         let mut random = || {
             // xorshift, so the floating phases don't depend on platform rand()
@@ -600,6 +657,44 @@ impl Session {
 
     pub fn settings(&self) -> &Settings {
         &self.settings
+    }
+
+    // What the timer shows at `time` following the main replay, in hundredths: its time once
+    // its riders have all reached their last frame
+    pub fn main_timer_centiseconds(&self, time: f64) -> i64 {
+        let duration = self.riders.iter().map(Rider::duration).fold(0.0, f64::max);
+        let end = self.riders.iter().map(|r| r.end).fold(0.0, f64::max);
+        if time >= duration {
+            self.riders
+                .iter()
+                .map(|r| r.end_centiseconds)
+                .max()
+                .unwrap_or(0)
+        } else {
+            (time.min(end) * TIME_TO_CENTISECONDS) as i64
+        }
+    }
+
+    // The time to show now, in seconds: the replay's own once every bike has reached its
+    // last frame
+    pub fn shown_seconds(&self) -> f64 {
+        if self.time >= self.duration() {
+            self.end_seconds()
+        } else {
+            self.seconds()
+        }
+    }
+
+    // The replay's time in seconds, see Rider::end
+    pub fn end_seconds(&self) -> f64 {
+        let centiseconds = self
+            .riders
+            .iter()
+            .chain(&self.ghosts)
+            .map(|r| r.end_centiseconds)
+            .max()
+            .unwrap_or(0);
+        centiseconds_to_seconds(centiseconds)
     }
 
     // Time at which every bike has reached its last frame
@@ -800,6 +895,12 @@ pub fn start_rec(level: &Level) -> Rec {
     }
 }
 
+// When each ride of `rec` reaches the exit, playing them together: in a two player replay
+// the apples of both count
+pub fn finish_times(level: &Level, rec: &Rec, settings: Settings) -> Vec<Option<f64>> {
+    finishes(&Session::unplayed(level, rec, &[], settings))
+}
+
 // When a ride reaches the exit with every apple taken, in game time
 pub fn finish_time(level: &Level, rec: &Rec, ride: &Ride, settings: Settings) -> Option<f64> {
     let single = Rec {
@@ -809,14 +910,58 @@ pub fn finish_time(level: &Level, rec: &Rec, ride: &Ride, settings: Settings) ->
         level_filename: rec.level_filename.clone(),
         rides: vec![ride.clone()],
     };
-    let mut session = Session::new(level, &single, &[], settings);
-    for frame in 0..=ride.frames.len() {
-        session.step(frame as f64 * time_per_frame(ride));
-        if let Some(time) = session.finish_time() {
-            return Some(time);
+    let session = Session::unplayed(level, &single, &[], settings);
+    finishes(&session)[0]
+}
+
+// When each of the session's riders finishes: their touches of the level's objects in time
+// order, both riders' together. A rider finishes on reaching the exit once every apple is
+// taken, by either rider of a two player replay, and is out once it touches a killer.
+fn finishes(session: &Session) -> Vec<Option<f64>> {
+    let objects = &session.objects;
+    let kind = |object: usize| objects.get(object).map(|o| o.kind);
+    let mut touches: Vec<(f64, usize, usize)> = session
+        .riders
+        .iter()
+        .enumerate()
+        .flat_map(|(rider, r)| {
+            r.ride
+                .events
+                .iter()
+                .filter_map(move |e| Some((e.time, rider, usize::try_from(e.object_id).ok()?)))
+        })
+        .collect();
+    // The game moves the first bike and then the second, so the other rider's apple taken at
+    // the same moment counts only when the exit is reached by the second. A rider's own apple
+    // counts for the exit it reaches at the same moment.
+    touches.sort_by(|a, b| {
+        let exit = |t: &(f64, usize, usize)| kind(t.2) == Some(ObjectType::Exit);
+        a.0.total_cmp(&b.0)
+            .then(a.1.cmp(&b.1))
+            .then(exit(a).cmp(&exit(b)))
+    });
+    let mut taken = vec![false; objects.len()];
+    let mut apples = 0;
+    let mut out = vec![false; session.riders.len()];
+    let mut finishes = vec![None; session.riders.len()];
+    for (time, rider, object) in touches {
+        if out[rider] {
+            continue;
+        }
+        match kind(object) {
+            Some(ObjectType::Food) if !taken[object] => {
+                taken[object] = true;
+                apples += 1;
+            }
+            Some(ObjectType::Exit) if apples >= session.total_apples => {
+                finishes[rider] = Some(time);
+                out[rider] = true;
+            }
+            Some(ObjectType::Killer) => out[rider] = true,
+            _ => {}
         }
     }
-    None
+    finishes
 }
 
 #[cfg(test)]

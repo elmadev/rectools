@@ -270,3 +270,49 @@ fn the_session_is_done_when_every_bike_runs_out() {
         "{first_done:?}"
     );
 }
+
+#[test]
+fn the_timer_ends_on_the_finish_after_the_last_frame() {
+    // The exit is reached between the last frame and the next, as the game records it
+    let finish = at(FRAMES - 1) + 0.6 * FRAME_INDEX_TO_TIME;
+    let exit = Event {
+        time: finish,
+        ..touch(0, EXIT)
+    };
+    let s = session(vec![touch(3, APPLE), touch(9, UP_APPLE), exit]);
+    assert_eq!(s.riders[0].end, finish);
+    assert_eq!(
+        s.main_timer_centiseconds(s.duration()),
+        finish_centiseconds(finish)
+    );
+    // Before the end the timer runs with the replay
+    let ten = (at(10) * TIME_TO_CENTISECONDS) as i64;
+    assert_eq!(s.main_timer_centiseconds(at(10)), ten);
+}
+
+#[test]
+fn an_unfinished_replay_lasts_its_frames() {
+    let s = session(vec![touch(3, APPLE)]);
+    // 31 frames at 30 a second, in whole hundredths
+    assert_eq!(s.main_timer_centiseconds(s.duration()), 103);
+}
+
+#[test]
+fn a_two_player_replay_ends_on_its_latest_finish() {
+    let first = Event {
+        time: at(20),
+        ..touch(0, EXIT)
+    };
+    let second = Event {
+        time: at(25),
+        ..touch(0, EXIT)
+    };
+    let a = ride(vec![touch(3, APPLE), touch(5, UP_APPLE), first], |_| 0);
+    let b = ride(vec![second], |_| 0);
+    let s = Session::new(&level(), &rec(vec![a, b]), &[], Settings::default());
+    assert_eq!(
+        s.main_timer_centiseconds(s.duration()),
+        finish_centiseconds(at(25))
+    );
+    assert_eq!(s.riders[0].end, s.riders[1].end);
+}

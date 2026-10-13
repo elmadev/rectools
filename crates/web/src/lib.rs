@@ -635,7 +635,7 @@ impl Viewer {
             has_content: self.loaded.is_some(),
             level_only: p.level_only(),
             across: p.across(),
-            duration: p.duration(),
+            duration: p.shown_duration(),
             bike_count: p.bike_count(),
             playing: p.is_playing(),
             speed: p.speed(),
@@ -734,14 +734,14 @@ impl Viewer {
         }
     }
 
-    // Length of the replay in seconds
+    // The replay's time in seconds, which can be a moment past its last frame when it finishes
     pub fn duration(&self) -> f64 {
-        self.player.duration()
+        self.player.shown_duration()
     }
 
-    // Current position in seconds
+    // Current position in seconds, and at the end the replay's time
     pub fn time(&self) -> f64 {
-        self.player.time()
+        self.player.shown_time()
     }
 
     // Moves to `seconds`

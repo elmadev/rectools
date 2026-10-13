@@ -723,7 +723,7 @@ impl App {
             ));
             return;
         }
-        let (t, duration) = (p.time(), p.duration());
+        let (t, duration) = (p.shown_time(), p.shown_duration());
         gpu.window.set_title(&format!(
             "recview - {} - {:02}:{:05.2} / {:02}:{:05.2} - {:.2}x - zoom {:.2}{}{}",
             current.name,

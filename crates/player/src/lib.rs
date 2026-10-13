@@ -126,7 +126,7 @@ impl Content {
             false => loaded
                 .finish_times()
                 .into_iter()
-                .map(|t| t.map(replay::time_to_seconds))
+                .map(|t| t.map(|t| replay::centiseconds_to_seconds(replay::finish_centiseconds(t))))
                 .collect(),
         };
         Content {
@@ -348,6 +348,15 @@ impl Player {
 
     pub fn duration(&self) -> f64 {
         self.session().map_or(0.0, Session::duration_seconds)
+    }
+
+    // The time to show, and the replay's time: past the last frame, when it finishes
+    pub fn shown_time(&self) -> f64 {
+        self.session().map_or(0.0, Session::shown_seconds)
+    }
+
+    pub fn shown_duration(&self) -> f64 {
+        self.session().map_or(0.0, Session::end_seconds)
     }
 
     // Moves to `seconds`, which also ends the pause at the end

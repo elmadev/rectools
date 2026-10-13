@@ -521,13 +521,14 @@ impl Loaded {
     }
 
     // When each rider reaches the exit with every apple, in game time, in the order of `riders`
+    // The main replay's riders finish together, so a two player replay's apples all count
     pub fn finish_times(&self) -> Vec<Option<f64>> {
-        self.riders
-            .iter()
-            .map(|(ride, _)| {
-                replay::finish_time(&self.level, &self.rec, ride, self.settings.clone())
-            })
-            .collect()
+        let main = self.rec.rides.len();
+        let mut times = replay::finish_times(&self.level, &self.rec, self.settings.clone());
+        times.extend(self.riders.iter().skip(main).map(|(ride, _)| {
+            replay::finish_time(&self.level, &self.rec, ride, self.settings.clone())
+        }));
+        times
     }
 
     // Leaves out the ghosts that don't finish, and returns how many
