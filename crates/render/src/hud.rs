@@ -119,13 +119,14 @@ pub fn format_centiseconds(time: i64) -> [u8; 8] {
 }
 
 // The pixels the game's seven segment timers cover. `best` and `flagtag` are shown
-// when set; times are in centiseconds.
+// when set; times are in centiseconds. Across draws them a little to the left (DIGIT.CPP).
 pub(crate) fn timer_rects(
     view_width: i32,
     view_height: i32,
     best: Option<i64>,
     flagtag: Option<i64>,
     current: i64,
+    across: bool,
 ) -> Vec<PixelRect> {
     const LINE_HEIGHT: f64 = 16.0;
     const LINE_WIDTH: f64 = 10.0;
@@ -143,8 +144,14 @@ pub(crate) fn timer_rects(
         colon_y2: ((LINE_HEIGHT * 1.5 - 1.0) * height_ratio) as i32,
     };
     let digit_width = 1 + m.line_width + 1;
-    let edge_width = (34.0 * width_ratio) as i32;
     let timer_width = 3 * m.digit_spacing + 2 * m.digit_and_colon_spacing + digit_width;
+    // At 640x480 Across's best time starts at x 28 and the current one at 488
+    let (left_edge, right_edge) = if across {
+        (28.0, 640.0 - 488.0 - 108.0)
+    } else {
+        (34.0, 34.0)
+    };
+    let edge_width = (left_edge * width_ratio) as i32;
     let y = (420.0 * height_ratio) as i32;
 
     let mut out = Vec::new();
@@ -152,7 +159,7 @@ pub(crate) fn timer_rects(
     if let Some(best) = best {
         timer(&m, &format_centiseconds(best), best_x, y, &mut out);
     }
-    let current_x = view_width - edge_width - timer_width;
+    let current_x = view_width - (right_edge * width_ratio) as i32 - timer_width;
     timer(&m, &format_centiseconds(current), current_x, y, &mut out);
     if let Some(flagtag) = flagtag {
         timer(
@@ -179,7 +186,7 @@ mod tests {
 
     #[test]
     fn segments_do_not_overlap() {
-        let rects = timer_rects(800, 600, None, None, 888888 % 360000);
+        let rects = timer_rects(800, 600, None, None, 888888 % 360000, false);
         for (i, a) in rects.iter().enumerate() {
             for b in &rects[i + 1..] {
                 let overlap = a.x < b.x + b.width

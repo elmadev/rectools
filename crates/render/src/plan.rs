@@ -227,6 +227,7 @@ pub fn plan(
                 params.best_time,
                 flagtag,
                 shown,
+                matches!(scene.look, Look::Across(_)),
             );
             timer_data.extend(
                 rects

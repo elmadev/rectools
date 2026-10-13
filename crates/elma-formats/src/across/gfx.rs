@@ -55,6 +55,8 @@ pub struct AcrossGraphics {
     pub grounds: [Ground; 3],
     pub bike: Bike,
     pub objects: Vec<ObjectKind>,
+    // The timer's color, which the game draws it in whatever is behind it
+    pub timer_color: u8,
     pub frame_color: u8,
 }
 
@@ -173,6 +175,7 @@ impl AcrossGraphics {
             grounds,
             bike,
             objects: object_kinds(&file(&object_file)?, &pcx)?,
+            timer_color: colors[4].clamp(0, 255) as u8,
             frame_color: colors[6].clamp(0, 255) as u8,
         })
     }

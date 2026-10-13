@@ -9,7 +9,6 @@ use crate::instance::{BIKE_DISTANCE, Instance, M2P, snap};
 use crate::scene::{Look, Scene, TextureRef};
 use elma_formats::across::gfx::{AcrossGraphics, Picture};
 use elma_formats::lev::{Level, ObjectType};
-use elma_formats::lgr::timer_palette_map;
 use elma_formats::pic::Pic8;
 use replay::{Animation, LevelObject, Pose, Vec2, circles_intersection};
 use std::f64::consts::PI;
@@ -135,7 +134,8 @@ pub fn scene(
         atlas_size: atlas.layer_size(),
         atlas_layers: atlas.into_layers(),
         palette: gfx.palette,
-        timer_map: timer_palette_map(&gfx.palette),
+        // One color, unlike Elma's timer that stands out from what is behind it (DIGIT.CPP)
+        timer_map: [gfx.timer_color; 256],
         // Textures start at the corner of the area the game draws
         canvas_origin: origin,
         polygon_vertices: crate::scene::polygon_fans(level),
