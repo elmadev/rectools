@@ -13,6 +13,7 @@
 - A tap in full screen shows the controls without pausing.
 - No flicker while resizing.
 - Objects move with the replay's time.
+- Full screen fits iPhones.
 
 ## 0.1.7 - 2026-10-13
 

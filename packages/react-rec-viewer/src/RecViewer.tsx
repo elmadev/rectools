@@ -183,11 +183,10 @@ const resumeButton: CSSProperties = {
   cursor: "pointer",
 };
 
+// Sized by `inset`, as 100vh on a phone reaches under the browser's own bars
 const fullStyle: CSSProperties = {
   position: "fixed",
   inset: 0,
-  width: "100vw",
-  height: "100vh",
   zIndex: 10000,
   background: "#000",
 };
@@ -806,6 +805,9 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
                   left: 0,
                   right: 0,
                   bottom: 0,
+                  // Clear of a phone's rounded corners, notch and home bar
+                  padding:
+                    "0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)",
                   transition: "opacity 0.3s",
                   opacity: controlsHidden ? 0 : 1,
                   pointerEvents: controlsHidden ? "none" : undefined,
