@@ -11,6 +11,7 @@ members = [
     "crates/game-data",
     "crates/recview",
     "crates/player",
+    "crates/bench",
 ]
 
 [workspace.package]

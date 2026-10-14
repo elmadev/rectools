@@ -1,0 +1,13 @@
+[package]
+name = "bench"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+publish = false
+
+[dependencies]
+replay.workspace = true
+render.workspace = true
+game-data.workspace = true
+pollster.workspace = true
+wgpu = { workspace = true, features = ["wgsl", "metal", "vulkan", "dx12"] }
