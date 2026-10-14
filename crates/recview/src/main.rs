@@ -7,7 +7,7 @@ mod sound;
 
 use audio::Sounds;
 use game_data::{GameFolder, Ghost, find_file, is_across_rec};
-use player::{Content, Player, Settings};
+use player::{Content, Player, Settings, ZOOM_STEP};
 use render::{
     GpuScene, MAX_ZOOM, MIN_ZOOM, Output, Renderer, Scene, SceneOptions, Targets, acquire,
     surface_format,
@@ -914,7 +914,8 @@ impl ApplicationHandler<Vec<PathBuf>> for App {
                     MouseScrollDelta::LineDelta(_, y) => y as f64,
                     MouseScrollDelta::PixelDelta(p) => p.y / 40.0,
                 };
-                self.player.zoom_by((lines * 0.15).exp());
+                // A notch zooms as much as the zoom keys
+                self.player.zoom_by(ZOOM_STEP.powf(lines));
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 if button == MouseButton::Left {

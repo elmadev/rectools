@@ -402,8 +402,8 @@ impl Player {
                 self.playing = false;
                 self.seek(self.time() + sign * FRAME_SECONDS);
             }
-            Action::ZoomOut => self.zoom_by(1.0 / ZOOM_STEP),
-            Action::ZoomIn => self.zoom_by(ZOOM_STEP),
+            Action::ZoomOut => self.zoom_step(-1),
+            Action::ZoomIn => self.zoom_step(1),
             Action::FitLevel => self.fit_level(),
             Action::Recenter => self.recenter(),
             Action::FollowNext => self.follow_next(1),
@@ -479,6 +479,18 @@ impl Player {
     // From the zoom on screen, which auto zoom may have made smaller than the one set
     pub fn zoom_by(&mut self, factor: f64) {
         self.set_zoom(self.shown_zoom() * factor);
+    }
+
+    // To the next power of ZOOM_STEP, so stepping always comes back to 1 however the zoom
+    // was reached, by the wheel or by stopping at MIN_ZOOM
+    pub fn zoom_step(&mut self, steps: i32) {
+        let level = self.shown_zoom().ln() / ZOOM_STEP.ln();
+        let next = if steps > 0 {
+            (level + 1e-6).floor() as i32 + steps
+        } else {
+            (level - 1e-6).ceil() as i32 + steps
+        };
+        self.set_zoom(ZOOM_STEP.powi(next));
     }
 
     // The zoom on screen, before the screen's scale

@@ -243,7 +243,28 @@ fn auto_zoom_zooms_out_to_show_the_ghost() {
     // Zooming in goes from the zoom on screen
     let shown = p.shown_zoom();
     p.key("e", false);
-    assert!(near(p.zoom(), shown * ZOOM_STEP));
+    assert!(p.zoom() > shown && p.zoom() <= shown * ZOOM_STEP);
+}
+
+#[test]
+fn zoom_steps_come_back_to_one() {
+    let mut p = player(10.0, 0);
+    // From between the steps, as the wheel leaves it
+    p.set_zoom(1.1);
+    p.zoom_step(-1);
+    assert!(near(p.zoom(), 1.0));
+    p.set_zoom(1.1);
+    p.zoom_step(1);
+    assert!(near(p.zoom(), ZOOM_STEP));
+    // From the smallest zoom, which isn't a step
+    for _ in 0..100 {
+        p.zoom_step(-1);
+    }
+    assert_eq!(p.zoom(), MIN_ZOOM);
+    while p.zoom() < 0.99 {
+        p.zoom_step(1);
+    }
+    assert!(near(p.zoom(), 1.0));
 }
 
 #[test]

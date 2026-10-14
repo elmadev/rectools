@@ -13,9 +13,13 @@ export interface GestureHandlers {
 const TAP_DISTANCE = 6;
 const TAP_MILLISECONDS = 300;
 
-// Wheel deltas come in pixels, lines (Firefox with a mouse) or pages
+// A notch of a mouse wheel zooms as much as the zoom buttons, ZOOM_STEP in the player crate
+const NOTCH_ZOOM = 1.2;
+const NOTCH_PIXELS = 100;
+
+// Wheel deltas come in pixels, lines (Firefox with a mouse, 3 to a notch) or pages
 function wheelPixels(e: WheelEvent, pageHeight: number): number {
-  if (e.deltaMode === WheelEvent.DOM_DELTA_LINE) return e.deltaY * 16;
+  if (e.deltaMode === WheelEvent.DOM_DELTA_LINE) return (e.deltaY * NOTCH_PIXELS) / 3;
   if (e.deltaMode === WheelEvent.DOM_DELTA_PAGE) return e.deltaY * pageHeight;
   return e.deltaY;
 }
@@ -41,7 +45,7 @@ export function attachGestures(canvas: HTMLCanvasElement, handlers: GestureHandl
     e.preventDefault();
     const pixels = wheelPixels(e, canvas.clientHeight);
     // A trackpad pinch arrives as a wheel with ctrlKey, in smaller steps
-    handlers.zoom(Math.exp(-pixels * (e.ctrlKey ? 0.01 : 0.002)));
+    handlers.zoom(e.ctrlKey ? Math.exp(-pixels * 0.01) : NOTCH_ZOOM ** (-pixels / NOTCH_PIXELS));
   };
 
   const onDown = (e: PointerEvent) => {
