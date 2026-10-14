@@ -212,11 +212,13 @@ pub struct Turning {
 }
 
 impl Default for Turning {
+    // Facing left and done turning, as the game's first update leaves it: drawn before
+    // that update, a phase of 0 would show the bike just starting to turn, facing right
     fn default() -> Self {
         Turning {
             flipped: false,
             turn_time: -1000.0,
-            turn_phase: 0.0,
+            turn_phase: 1.0,
         }
     }
 }

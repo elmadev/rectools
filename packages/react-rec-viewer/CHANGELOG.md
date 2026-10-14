@@ -4,6 +4,7 @@
 
 - Grass and ground no longer shimmer when the camera moves on a scaled screen or when
   zoomed.
+- The bike faces left at the start, like in the game.
 
 ## 0.1.7 - 2026-10-13
 

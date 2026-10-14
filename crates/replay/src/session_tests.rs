@@ -3,7 +3,7 @@
 
 use super::*;
 use elma_formats::lev::{Object, TopTens, Vec2 as LevVec2};
-use elma_formats::rec::{FLAG_FLAGTAG_A, Rec};
+use elma_formats::rec::{FLAG_FLAGTAG_A, FLAG_FLIPPED, Rec};
 
 // One second at the replay's frame rate
 const FRAMES: usize = 31;
@@ -315,4 +315,35 @@ fn a_two_player_replay_ends_on_its_latest_finish() {
         finish_centiseconds(at(25))
     );
     assert_eq!(s.riders[0].end, s.riders[1].end);
+}
+
+fn session_with_flags(flags: impl Fn(usize) -> u8) -> Session {
+    let rides = vec![ride(vec![], flags)];
+    Session::new(&level(), &rec(rides), &[], Settings::default())
+}
+
+#[test]
+fn a_replay_starts_facing_left_and_done_turning() {
+    let session = session_with_flags(|_| 0);
+    for turning in [
+        session.riders[0].animation.bike_turning,
+        session.riders[0].animation.camera_turning,
+    ] {
+        assert!(!turning.flipped);
+        assert_eq!(turning.turn_phase, 1.0);
+    }
+}
+
+#[test]
+fn turning_at_the_start_animates_the_turn_once() {
+    let mut session = session_with_flags(|_| FLAG_FLIPPED);
+    session.step(0.0);
+    let turning = session.riders[0].animation.bike_turning;
+    assert!(turning.flipped);
+    assert_eq!(turning.turn_time, 0.0);
+    assert!(turning.turn_phase < 1.0);
+    play_to(&mut session, FRAMES - 1);
+    let turning = session.riders[0].animation.bike_turning;
+    assert_eq!(turning.turn_time, 0.0);
+    assert_eq!(turning.turn_phase, 1.0);
 }
