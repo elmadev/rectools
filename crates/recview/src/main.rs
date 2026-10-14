@@ -52,6 +52,7 @@ Keys, the same as the web player's:
   left, right         back / forward 2.5 seconds
   , / .               back / forward one frame
   W / E, wheel        zoom out / in
+  0                   zoom 1.00x, the game's
   F                   show the whole level
   C                   back onto the bike, after dragging it away
   N, shift N          follow the next / previous bike

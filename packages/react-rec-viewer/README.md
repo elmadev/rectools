@@ -90,6 +90,7 @@ full screen.
 | ← / → | Back / forward 2.5 seconds |
 | `,` / `.` | Back / forward one frame |
 | W / E | Zoom out / in |
+| 0 | Zoom 1.00x, the game's |
 | F | Show the whole level |
 | C | Back onto the bike |
 | N / Shift N | Follow the next / previous bike |

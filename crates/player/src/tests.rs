@@ -341,3 +341,11 @@ fn level_keys_do_nothing_in_across() {
     p.key("G", false);
     assert_eq!(p.settings().level, LevelOptions::default());
 }
+
+#[test]
+fn zero_goes_back_to_the_games_zoom() {
+    let mut p = player(10.0, 0);
+    p.set_zoom(0.58);
+    p.key("0", false);
+    assert_eq!(p.zoom(), 1.0);
+}

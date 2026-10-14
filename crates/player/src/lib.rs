@@ -400,6 +400,7 @@ impl Player {
             }
             Action::ZoomOut => self.zoom_step(-1),
             Action::ZoomIn => self.zoom_step(1),
+            Action::ResetZoom => self.set_zoom(1.0),
             Action::FitLevel => self.fit_level(),
             Action::Recenter => self.recenter(),
             Action::FollowNext => self.follow_next(1),

@@ -17,6 +17,8 @@ pub enum Action {
     StepForward,
     ZoomOut,
     ZoomIn,
+    // The game's zoom, 1
+    ResetZoom,
     FitLevel,
     // Back onto the bike, which also resumes auto zoom
     Recenter,
@@ -98,6 +100,10 @@ const BINDINGS: &[Binding] = &[
     Binding {
         keys: &["e", "E"],
         action: Action::ZoomIn,
+    },
+    Binding {
+        keys: &["0"],
+        action: Action::ResetZoom,
     },
     Binding {
         keys: &["f", "F"],
@@ -186,6 +192,7 @@ pub const KEYS: &[KeyHelp] = &[
     help("← / →", "Back / forward 2.5 seconds"),
     help(", / .", "Back / forward one frame"),
     level("W / E", "Zoom out / in", false),
+    level("0", "Zoom 1.00x, the game's", false),
     level("F", "Show the whole level", false),
     help("C", "Back to the bike"),
     help("N / Shift N", "Follow the next / previous bike"),

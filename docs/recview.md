@@ -51,6 +51,7 @@ The same as the web player's:
 | ← / → | Back / forward 2.5 seconds |
 | `,` / `.` | Back / forward one frame |
 | W / E, wheel | Zoom out / in |
+| 0 | Zoom 1.00x, the game's |
 | Drag | Move the camera |
 | F | Show the whole level |
 | C | Back onto the bike |
