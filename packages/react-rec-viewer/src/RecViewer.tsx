@@ -434,12 +434,16 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     const exact = devicePixels.current;
     const w = Math.max(1, exact ? exact.w : Math.round(rect.width * dpr()));
     const h = Math.max(1, exact ? exact.h : Math.round(rect.height * dpr()));
-    if (canvas.width !== w || canvas.height !== h) {
+    const resized = canvas.width !== w || canvas.height !== h;
+    if (resized) {
       canvas.width = w;
       canvas.height = h;
     }
-    viewerRef.current?.resize(w, h, dpr());
+    const viewer = viewerRef.current;
+    viewer?.resize(w, h, dpr());
     dirty.current = true;
+    // A new size clears the canvas, which would show blank until the next frame draws it
+    if (resized && viewer?.hasContent()) viewer.render();
   }, []);
 
   // Create the GPU viewer once per canvas, with the settings as the props start them

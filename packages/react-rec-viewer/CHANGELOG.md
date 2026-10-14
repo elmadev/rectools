@@ -11,6 +11,7 @@
 - Zoom buttons and the mouse wheel use the same steps.
 - Settings stay inside the player.
 - A tap in full screen shows the controls without pausing.
+- No flicker while resizing.
 
 ## 0.1.7 - 2026-10-13
 
