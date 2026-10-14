@@ -1,5 +1,5 @@
 use crate::atlas::AtlasRect;
-use crate::instance::{BIKE_DISTANCE, Instance, snap};
+use crate::instance::{BIKE_DISTANCE, Instance, mode, snap};
 use replay::{Animation, Pose, Vec2, circles_intersection};
 use std::f64::consts::PI;
 
@@ -56,6 +56,47 @@ pub(crate) struct Drawer<'a> {
     pub stretch: Option<Stretch>,
 }
 
+// The game turns a picture 0.005 radians away from level or upright, where its inverse of
+// u and v would break down (draw_affine_pic). The wheels and the head of a level bike are.
+fn off_the_axes(mut u: Vec2, mut v: Vec2, turning: bool) -> (Vec2, Vec2) {
+    const MINIMUM_ROTATION: f64 = 0.005;
+    let mut needs_rotation = false;
+    let mut positive = false;
+    for w in [u, v] {
+        if w.x == 0.0 {
+            needs_rotation = true;
+        } else if (w.y / w.x).abs() < MINIMUM_ROTATION {
+            needs_rotation = true;
+            if w.y / w.x > 0.0 {
+                positive = true;
+            }
+        }
+    }
+    if needs_rotation {
+        let rotation = if positive {
+            MINIMUM_ROTATION
+        } else {
+            -MINIMUM_ROTATION
+        };
+        u = u.rotated(rotation);
+        v = v.rotated(rotation);
+    }
+    // While turning it checks every side both ways and keeps turning until none is close
+    if turning {
+        let close = |w: Vec2| {
+            w.x == 0.0
+                || (w.y / w.x).abs() < MINIMUM_ROTATION
+                || w.y == 0.0
+                || (w.x / w.y).abs() < MINIMUM_ROTATION
+        };
+        while close(u) || close(v) {
+            u = u.rotated(MINIMUM_ROTATION);
+            v = v.rotated(MINIMUM_ROTATION);
+        }
+    }
+    (u, v)
+}
+
 impl Drawer<'_> {
     // The game spans u and v from the center of the first texel to the center of the
     // last one, so the picture reaches half a texel further on each side.
@@ -66,6 +107,7 @@ impl Drawer<'_> {
             u = stretch.vector(u);
             v = stretch.vector(v);
         }
+        (u, v) = off_the_axes(u, v, self.stretch.is_some());
         let w = sprite.rect.width.max(2) as f64;
         let h = sprite.rect.height.max(2) as f64;
         let du = u * (1.0 / (w - 1.0));
@@ -77,6 +119,7 @@ impl Drawer<'_> {
             [dv.x * h, dv.y * h],
         )
         .image(sprite.rect, Some(sprite.transparency))
+        .mode(mode::AFFINE)
         .snap(snap::EXACT)
         .distance(BIKE_DISTANCE);
         self.out.push(instance);

@@ -29,6 +29,7 @@ const MODE_MASKED_TEXTURE: u32 = 1u;
 const MODE_RECOLOR: u32 = 3u;
 const MODE_TEXTURE: u32 = 4u;
 const MODE_SKY: u32 = 5u;
+const MODE_AFFINE: u32 = 6u;
 
 struct InstanceIn {
     @location(0) origin: vec2<f32>,
@@ -57,6 +58,10 @@ struct VertexOut {
     @location(5) @interpolate(flat) params: vec4<u32>,
     // The atlas layers of image and texture
     @location(6) @interpolate(flat) atlas_layers: vec2<u32>,
+    // The quad's corner and sides in pixels from the view's corner, for affine pictures
+    @location(7) @interpolate(flat) quad_origin: vec2<f32>,
+    @location(8) @interpolate(flat) quad_u: vec2<f32>,
+    @location(9) @interpolate(flat) quad_v: vec2<f32>,
 }
 
 fn to_clip(world: vec2<f32>, corner: vec2<f32>, depth: f32) -> vec4<f32> {
@@ -94,6 +99,9 @@ fn vs_instance(@builtin(vertex_index) vertex: u32, instance: InstanceIn) -> Vert
     out.texture_size = instance.texture_size;
     out.params = vec4<u32>(instance.mode, instance.transparency, instance.color, instance.layer);
     out.atlas_layers = vec2<u32>(instance.atlas_layers & 0xffu, instance.atlas_layers >> 8u);
+    out.quad_origin = (instance.origin - view.corner) * view.pixels_per_meter;
+    out.quad_u = instance.axis_u * view.pixels_per_meter;
+    out.quad_v = instance.axis_v * view.pixels_per_meter;
     return out;
 }
 
@@ -172,6 +180,21 @@ fn sky_texture(in: VertexOut) -> u32 {
     return texture_texel(in.texture, in.atlas_layers.y, in.texture_size, floor(x + view.sky_x), floor(y));
 }
 
+// Where in its quad an affine picture is at this pixel's corner, worked out from the pixel
+// rather than interpolated: the GPU snaps the quad's corners to a fraction of a pixel, and
+// shrunk 5 to 1, as the bike's frame is, that picks a neighboring texel here and there.
+fn affine_st(in: VertexOut) -> vec2<f32> {
+    let p = vec2<f32>(
+        floor(in.position.x - view.offset.x),
+        floor(view.offset.y + view.size.y - in.position.y),
+    );
+    let d = p - in.quad_origin;
+    let u = in.quad_u;
+    let v = in.quad_v;
+    let det = u.x * v.y - v.x * u.y;
+    return vec2<f32>(d.x * v.y - v.x * d.y, u.x * d.y - d.x * u.y) / det;
+}
+
 fn shade(in: VertexOut) -> u32 {
     let mode = in.params.x;
     // Pictures, masks and recolored pictures skip their transparent pixels
@@ -197,6 +220,26 @@ fn shade(in: VertexOut) -> u32 {
     return in.params.z;
 }
 
+// Only the bikes have affine pictures. Their shading stays out of `shade`: the level's pass
+// covers every pixel, and with it there that pass took a sixth longer, though never using it.
+fn shade_dynamic(in: VertexOut) -> u32 {
+    if (in.params.x != MODE_AFFINE) {
+        return shade(in);
+    }
+    // The game draws the pixels whose corner is within u and v, which reach from the middle
+    // of the first texel to the middle of the last, so not the outer half texel
+    let st = affine_st(in);
+    let half = vec2<f32>(0.5, 0.5) / vec2<f32>(in.image.zw);
+    if (any(st < half) || any(st > vec2<f32>(1.0, 1.0) - half)) {
+        discard;
+    }
+    let c = image_texel(in.image, in.atlas_layers.x, st);
+    if (c == in.params.y) {
+        discard;
+    }
+    return c;
+}
+
 struct LevelOut {
     @location(0) index: u32,
     @location(1) layer: u32,
@@ -218,13 +261,13 @@ struct DynamicOut {
 
 @fragment
 fn fs_dynamic(in: VertexOut) -> DynamicOut {
-    return DynamicOut(shade(in), 0u);
+    return DynamicOut(shade_dynamic(in), 0u);
 }
 
 // A translucent ghost goes into its own layer as palette index + 1
 @fragment
 fn fs_ghost(in: VertexOut) -> DynamicOut {
-    return DynamicOut(0u, shade(in) + 1u);
+    return DynamicOut(0u, shade_dynamic(in) + 1u);
 }
 
 // Solid polygons, drawn into the stencil buffer only

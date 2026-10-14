@@ -14,6 +14,8 @@ pub mod mode {
     pub const TEXTURE: u32 = 4;
     // `texture` anchored to the bottom of the view, scrolling at half speed
     pub const SKY: u32 = 5;
+    // Like IMAGE, for the bike's pictures, sampled at each pixel's corner as the game does
+    pub const AFFINE: u32 = 6;
 }
 
 // Which camera corner an instance moves with. The game draws the level at whole
