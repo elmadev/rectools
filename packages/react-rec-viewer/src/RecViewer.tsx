@@ -822,6 +822,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
               return finish === undefined ? name : `${name} ${formatTime(finish)}`;
             })}
             fullscreen={fullscreen}
+            viewRef={containerRef}
             timeRef={timeRef}
             scrubRef={scrubRef}
             applesRef={applesRef}

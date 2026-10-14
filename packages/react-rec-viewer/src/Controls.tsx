@@ -1,4 +1,4 @@
-import { CSSProperties, MutableRefObject, ReactNode, RefObject, useEffect, useRef, useState } from "react";
+import { CSSProperties, MutableRefObject, ReactNode, RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { formatSpeed, formatTime } from "./format.js";
 import { keyList } from "./keys.js";
 import type { LevelOptions, LgrChoice } from "./RecViewer.js";
@@ -17,6 +17,8 @@ export interface ControlsProps {
   // With the finish times
   bikeLabels: string[];
   fullscreen: boolean;
+  // The whole viewer, which the settings stay inside
+  viewRef: RefObject<HTMLElement>;
   // Written by the render loop, so playing never re-renders React
   timeRef: RefObject<HTMLSpanElement>;
   scrubRef: RefObject<HTMLInputElement>;
@@ -123,6 +125,8 @@ const menu: CSSProperties = {
   gap: 6,
   padding: "10px 12px",
   minWidth: 220,
+  // The height limit includes the padding and border
+  boxSizing: "border-box",
   maxHeight: "min(70vh, 480px)",
   overflowY: "auto",
   border: "1px solid #444",
@@ -289,6 +293,22 @@ export function Controls(p: ControlsProps) {
   const disabled = !p.loaded;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const barRef = useRef<HTMLDivElement>(null);
+  // The room above the bar, so the settings don't reach past the top of the viewer, where a
+  // page may have a header over it
+  const [menuRoom, setMenuRoom] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const view = p.viewRef.current;
+    if (!settingsOpen || !view || !barRef.current) return;
+    const measure = () => {
+      const room = barRef.current!.getBoundingClientRect().top - view.getBoundingClientRect().top - 8;
+      setMenuRoom(Math.max(120, room));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(view);
+    return () => observer.disconnect();
+  }, [settingsOpen, p.viewRef]);
 
   // Clicking anywhere else closes the settings
   useEffect(() => {
@@ -304,7 +324,12 @@ export function Controls(p: ControlsProps) {
   return (
     <div ref={barRef} className="rectools-controls" style={bar}>
       {settingsOpen && (
-        <div className="rectools-settings" style={menu} role="dialog" aria-label="Settings">
+        <div
+          className="rectools-settings"
+          style={menuRoom === null ? menu : { ...menu, maxHeight: `min(70vh, 480px, ${menuRoom}px)` }}
+          role="dialog"
+          aria-label="Settings"
+        >
           <Settings {...p} />
         </div>
       )}

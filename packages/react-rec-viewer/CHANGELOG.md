@@ -9,6 +9,7 @@
 - The sky is drawn more accurately when zoomed.
 - The bike is drawn more like in the game.
 - Zoom buttons and the mouse wheel use the same steps.
+- Settings stay inside the player.
 
 ## 0.1.7 - 2026-10-13
 
