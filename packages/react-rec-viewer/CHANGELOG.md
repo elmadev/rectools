@@ -15,6 +15,7 @@
 - Objects move with the replay's time.
 - Full screen fits iPhones.
 - Thicker timer on high density screens.
+- Shirt stays on the first player in two player replays.
 
 ## 0.1.7 - 2026-10-13
 

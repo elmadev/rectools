@@ -673,10 +673,11 @@ pub fn dynamic_instances(
         );
     };
     let draw_riders = |out: &mut Vec<Instance>| {
+        // Each rider in their own shirt, whichever view follows them
         if multiplayer {
-            draw_rider(1 - follow, other_bike, None, out);
+            draw_rider(1 - follow, other_bike, shirt(1 - follow), out);
         }
-        draw_rider(follow, own_bike, shirt(0), out);
+        draw_rider(follow, own_bike, shirt(follow), out);
     };
     let followed_ghost = ghost.filter(|&i| i < session.ghosts.len());
     let ghosts_start = out.len() as u32;
