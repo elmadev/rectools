@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.8 - 2026-10-14
 
 - Grass and ground no longer shimmer when the camera moves on a scaled screen or when
   zoomed.
