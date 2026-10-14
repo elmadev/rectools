@@ -6,6 +6,7 @@
   zoomed.
 - The bike faces left at the start, like in the game.
 - Fixed drawing errors on some phones.
+- The sky is drawn more accurately when zoomed.
 
 ## 0.1.7 - 2026-10-13
 

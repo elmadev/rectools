@@ -125,20 +125,27 @@ fn texture_texel(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, gx: f32, gy:
     return atlas_texel(rect, layer, sx, sy);
 }
 
+fn positive_mod_i(a: i32, n: i32) -> i32 {
+    return ((a % n) + n) % n;
+}
+
 // The game resizes textures for the zoom (before flipping them) and tiles the result. Maps a
-// pixel of the zoomed, tiled texture back to the texture.
+// pixel of the zoomed, tiled texture back to the texture. In integers: the GPU's division
+// isn't exact, and 972.0 / 486.0 coming out just under 2 makes a 1008 wide texture wrap at
+// 2015 instead of 2016.
 fn zoomed_texel(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, zx: f32, zy: f32) -> u32 {
     if (view.texture_scale == 1.0) {
         return texture_texel(rect, layer, game_size, zx, zy);
     }
-    let height = max(floor(game_size.y * view.texture_scale), 1.0);
-    let scale = height / game_size.y;
-    let width = max(floor(game_size.x * scale), 1.0);
-    let x = positive_mod(zx, width);
-    let y = positive_mod(zy, height);
-    let gx = min(floor(x / scale), game_size.x - 1.0);
-    let gy = game_size.y - 1.0 - min(floor((height - 1.0 - y) / scale), game_size.y - 1.0);
-    return texture_texel(rect, layer, game_size, gx, gy);
+    let w = i32(game_size.x);
+    let h = i32(game_size.y);
+    let height = max(i32(floor(game_size.y * view.texture_scale)), 1);
+    let width = max(w * height / h, 1);
+    let x = positive_mod_i(i32(zx), width);
+    let y = positive_mod_i(i32(zy), height);
+    let gx = min(x * h / height, w - 1);
+    let gy = h - 1 - min((height - 1 - y) * h / height, h - 1);
+    return texture_texel(rect, layer, game_size, f32(gx), f32(gy));
 }
 
 const GAME_PIXELS_PER_METER: f32 = 48.0;
@@ -157,8 +164,8 @@ fn sky_texture(in: VertexOut) -> u32 {
     if (view.game_textures != 0u) {
         let x = floor(in.position.x - view.offset.x);
         let y = floor(view.offset.y + view.size.y - in.position.y);
-        let gx = floor((x + view.sky_x) / view.texture_scale);
-        return texture_texel(in.texture, in.atlas_layers.y, in.texture_size, gx, floor(y / view.texture_scale));
+        // Resized and tiled like the ground, with the screen's rows rather than the level's
+        return zoomed_texel(in.texture, in.atlas_layers.y, in.texture_size, x + view.sky_x, y);
     }
     let x = (in.position.x - view.offset.x) / view.texture_scale;
     let y = (view.offset.y + view.size.y - in.position.y) / view.texture_scale;
