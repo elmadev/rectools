@@ -628,9 +628,10 @@ impl Player {
             zoom: s.zoom * self.scale,
             camera: CameraMode::centered(s.centered_camera),
             pan: self.pan,
-            // A level on its own has no time to show
+            // A level on its own has no time to show, and is shown whole, which a minimap only
+            // repeats
             timer: s.timer && !content.level_only,
-            minimap: s.minimap,
+            minimap: s.minimap && !content.level_only,
             last_apple_time: s.last_apple_time && !content.level_only,
             best_time: content.best_time,
             center: self.center,

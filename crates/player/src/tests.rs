@@ -349,3 +349,22 @@ fn zero_goes_back_to_the_games_zoom() {
     p.key("0", false);
     assert_eq!(p.zoom(), 1.0);
 }
+
+#[test]
+fn a_level_on_its_own_has_no_minimap() {
+    let mut p = Player::new(Settings {
+        minimap: true,
+        ..Settings::default()
+    });
+    p.resize(800, 600, 1.0);
+    p.load(
+        Content {
+            level_only: true,
+            ..content(0.0, 0)
+        },
+        false,
+    );
+    assert!(!p.views(0.0)[0].minimap);
+    p.load(content(10.0, 0), false);
+    assert!(p.views(0.0)[0].minimap);
+}

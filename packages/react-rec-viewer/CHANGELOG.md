@@ -18,6 +18,7 @@
 - Shirt stays on the first player in two player replays.
 - 0 zooms back to 1.00x.
 - Last apple time drawn like the game.
+- No minimap on a level's page.
 
 ## 0.1.7 - 2026-10-13
 
