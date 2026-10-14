@@ -835,15 +835,6 @@ impl Session {
         self.time = time;
     }
 
-    // The time moving objects are at: the replay's, or `clock` for a level on its own, which
-    // has no time of its own
-    pub fn object_time(&self, clock: Option<f64>) -> f64 {
-        match clock {
-            Some(clock) if self.duration() == 0.0 => clock,
-            _ => self.time,
-        }
-    }
-
     // Current position and length in real seconds
     pub fn seconds(&self) -> f64 {
         time_to_seconds(self.time)
@@ -1098,42 +1089,6 @@ mod tests {
         assert!((pose.left_wheel_r.x - 2.0).abs() < 1e-6);
         assert!((pose.left_wheel_r.y + 3.0).abs() < 1e-6);
         assert_eq!(session.duration(), 0.0);
-    }
-
-    #[test]
-    fn objects_move_by_the_replay_unless_there_is_none() {
-        use elma_formats::lev::{Object, TopTens, Vec2 as LevVec2};
-        let level = Level {
-            level_id: 0,
-            name: String::new(),
-            lgr: String::new(),
-            foreground: String::new(),
-            background: String::new(),
-            polygons: vec![],
-            objects: vec![Object {
-                r: LevVec2 { x: 0.0, y: 0.0 },
-                kind: ObjectType::Start,
-                gravity: Gravity::None,
-                animation: 0,
-                motion: None,
-            }],
-            sprites: vec![],
-            topology_errors: false,
-            top_tens: TopTens::default(),
-        };
-        let rec = Rec {
-            multiplayer: false,
-            flagtag: false,
-            level_id: 0,
-            level_filename: String::new(),
-            rides: vec![ride(&[frame(0.0, 0, 0), frame(1.0, 0, 0)])],
-        };
-        let mut session = Session::new(&level, &rec, &[], Settings::default());
-        session.seek(0.5 * FRAME_INDEX_TO_TIME);
-        // Paused, the viewer's clock goes on but the objects stay with the replay
-        assert_eq!(session.object_time(Some(7.0)), session.time);
-        let alone = Session::new(&level, &start_rec(&level), &[], Settings::default());
-        assert_eq!(alone.object_time(Some(7.0)), 7.0);
     }
 
     #[test]

@@ -281,14 +281,13 @@ pub fn plan(
                 scratch.push(crate::minimap::fill(&p, m.ground, false));
                 scratch.push(crate::minimap::fill(&p, m.sky, false));
                 let icons_start = scratch.len() as u32;
-                let clock = session.object_time(options.dynamic.object_clock);
                 crate::minimap::icons(
                     m,
                     &p,
                     session,
                     rider.pose.bike_r,
                     &|i| session.objects[i].active,
-                    clock,
+                    session.time,
                     scratch,
                 );
                 MinimapDraw {

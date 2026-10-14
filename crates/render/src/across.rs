@@ -220,14 +220,12 @@ pub fn sky_instances(
 }
 
 // The objects that are still there, where they have moved to by `time` and turning through
-// their frames by `clock`
-#[allow(clippy::too_many_arguments)]
+// their frames
 pub fn object_instances(
     sprites: &AcrossSprites,
     objects: &[LevelObject],
     active: impl Fn(usize, &LevelObject) -> bool,
     time: f64,
-    clock: f64,
     animated: bool,
     out: &mut Vec<Instance>,
 ) {
@@ -243,7 +241,7 @@ pub fn object_instances(
             continue;
         };
         let frame = if animated {
-            ((clock * s.frame_speed) as i64).rem_euclid(s.frames.len() as i64) as usize
+            ((time * s.frame_speed) as i64).rem_euclid(s.frames.len() as i64) as usize
         } else {
             0
         };

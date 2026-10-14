@@ -585,8 +585,9 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     return () => observer.disconnect();
   }, [viewerReady, syncSize]);
 
-  // The render loop. Draws every frame while playing or while objects move, otherwise only
-  // after a change, and never while out of sight, though playing time goes on.
+  // The render loop. Draws every frame while playing, otherwise only after a change, and never
+  // while out of sight, though playing time goes on. Objects move with the replay's time, so
+  // they are still while paused.
   useEffect(() => {
     if (!loaded) return;
     let frame = 0;
@@ -600,8 +601,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
       if (!viewer || !s) return;
       const dt = Math.min(0.25, (now - last) / 1000);
       last = now;
-      const moving = s.levelOptions.animatedObjects || !s.levelOptions.stillObjects;
-      const draw = dirty.current || (onScreen.current && (s.playing || moving));
+      const draw = dirty.current || (onScreen.current && s.playing);
       if (!draw && !s.playing) return;
       dirty.current = false;
       // The core plays the replay, and pauses at the end before looping

@@ -182,8 +182,6 @@ pub struct Player {
     // the bike
     taken_over: bool,
     auto_frame: AutoFrame,
-    // Real seconds of watching, which objects animate by, paused or not
-    object_clock: f64,
 }
 
 impl Player {
@@ -203,7 +201,6 @@ impl Player {
             follow: BikeId(0),
             taken_over: false,
             auto_frame: AutoFrame::default(),
-            object_clock: 0.0,
         }
     }
 
@@ -262,7 +259,6 @@ impl Player {
 
     // Moves time on by `dt` real seconds
     pub fn tick(&mut self, dt: f64) -> Tick {
-        self.object_clock += dt;
         let mut tick = Tick::default();
         let playing = self.is_playing();
         let (speed, looping) = (self.speed, self.settings.looping);
@@ -648,7 +644,6 @@ impl Player {
                 animated_objects: s.level.animated_objects,
                 still_objects: s.level.still_objects,
                 pictures_in_background: s.pictures_in_background,
-                object_clock: Some(replay::seconds_to_time(self.object_clock)),
             },
             ghosts: GhostStyle::new(s.translucent_ghosts),
             // Like the game, the level at whole pixels with its textures sized for the zoom, so

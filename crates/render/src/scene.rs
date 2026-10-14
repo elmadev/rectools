@@ -521,9 +521,6 @@ pub struct DynamicOptions {
     pub animated_objects: bool,
     // Apples and the exit don't bob up and down
     pub still_objects: bool,
-    // The game time objects animate by, when it isn't the replay's: viewers keep it running
-    // while paused and for levels on their own
-    pub object_clock: Option<f64>,
     pub gravity_arrows: bool,
     // Draw objects and bikes over every picture
     pub pictures_in_background: bool,
@@ -534,7 +531,6 @@ impl Default for DynamicOptions {
         DynamicOptions {
             animated_objects: true,
             still_objects: false,
-            object_clock: None,
             gravity_arrows: true,
             pictures_in_background: false,
         }
@@ -590,14 +586,13 @@ pub fn dynamic_instances(
             ObjectType::Killer => (&sprites.killer, sprites.killer_transparency),
         };
         let floats = matches!(object.kind, ObjectType::Food | ObjectType::Exit);
-        let clock = options.object_clock.unwrap_or(time);
         let frame = if options.animated_objects {
-            ((clock / 0.014) as i64).rem_euclid(frames.len() as i64) as usize
+            ((time / 0.014) as i64).rem_euclid(frames.len() as i64) as usize
         } else {
             0
         };
         let bob = if floats && !options.still_objects {
-            5.0 * (clock * 15.5 + object.floating_phase).sin() / M2P
+            5.0 * (time * 15.5 + object.floating_phase).sin() / M2P
         } else {
             0.0
         };
@@ -711,13 +706,11 @@ fn across_instances(
     active: &dyn Fn(usize, &LevelObject) -> bool,
     out: &mut Vec<Instance>,
 ) -> std::ops::Range<u32> {
-    let clock = options.object_clock.unwrap_or(session.time);
     across::object_instances(
         sprites,
         &session.objects,
         active,
-        session.object_time(options.object_clock),
-        clock,
+        session.time,
         options.animated_objects,
         out,
     );
