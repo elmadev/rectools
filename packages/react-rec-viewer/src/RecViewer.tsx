@@ -359,6 +359,8 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
   // Whether the settings were open when the current press began: that press only closes them
   const settingsOpen = useRef(false);
   const pressClosesSettings = useRef(false);
+  // A touch while the controls are hidden only shows them, as a mouse moving does
+  const pressShowsControls = useRef(false);
   const viewerRef = useRef<Viewer | null>(null);
   // Something changed that a paused player has to draw
   const dirty = useRef(true);
@@ -634,7 +636,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
       pan: (dx, dy) => change((v) => v.panBy(dx * dpr(), dy * dpr())),
       zoom: (factor) => change((v) => v.zoomBy(factor)),
       tap: () => {
-        if (!pressClosesSettings.current) togglePlay();
+        if (!pressClosesSettings.current && !pressShowsControls.current) togglePlay();
       },
     });
   }, [change, togglePlay]);
@@ -755,8 +757,9 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
       className={className}
       tabIndex={0}
       onKeyDown={onKeyDown}
-      onPointerDownCapture={() => {
+      onPointerDownCapture={(e) => {
         pressClosesSettings.current = settingsOpen.current;
+        pressShowsControls.current = controlsHidden && e.pointerType !== "mouse";
         wake();
       }}
       onPointerMove={wake}

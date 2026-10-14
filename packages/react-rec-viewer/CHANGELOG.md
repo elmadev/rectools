@@ -10,6 +10,7 @@
 - The bike is drawn more like in the game.
 - Zoom buttons and the mouse wheel use the same steps.
 - Settings stay inside the player.
+- A tap in full screen shows the controls without pausing.
 
 ## 0.1.7 - 2026-10-13
 
