@@ -97,4 +97,7 @@ pub struct RenderOptions {
     pub dynamic: DynamicOptions,
     pub ghosts: GhostStyle,
     pub textures: TextureZoom,
+    // How many pixels thick the timer's lines are. The game's are 1, which a high density
+    // screen makes hard to see; 0 is taken as 1.
+    pub timer_thickness: u32,
 }

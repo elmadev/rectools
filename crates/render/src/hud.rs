@@ -19,6 +19,8 @@ enum Segment {
 }
 
 struct Metrics {
+    // Of every line, around where the game's 1 pixel line is
+    thickness: i32,
     line_width: i32,
     line_height: i32,
     digit_spacing: i32,
@@ -29,17 +31,18 @@ struct Metrics {
 }
 
 fn segment(m: &Metrics, segment: Segment, x: i32, y: i32, out: &mut Vec<PixelRect>) {
+    let grow = (m.thickness - 1) / 2;
     let vertical = |x, y| PixelRect {
-        x,
+        x: x - grow,
         y,
-        width: 1,
+        width: m.thickness,
         height: m.line_height,
     };
     let horizontal = |x, y| PixelRect {
         x,
-        y,
+        y: y - grow,
         width: m.line_width,
-        height: 1,
+        height: m.thickness,
     };
     out.push(match segment {
         Segment::BottomLeft => vertical(x, y + 1),
@@ -82,10 +85,10 @@ fn digit(m: &Metrics, c: u8, x: i32, y: i32, out: &mut Vec<PixelRect>) {
 fn colon(m: &Metrics, x: i32, y: i32, out: &mut Vec<PixelRect>) {
     for dy in [m.colon_y1, m.colon_y2] {
         out.push(PixelRect {
-            x: x + m.colon_x,
-            y: y + dy,
-            width: 2,
-            height: 2,
+            x: x + m.colon_x + 1 - m.thickness,
+            y: y + dy + 1 - m.thickness,
+            width: 2 * m.thickness,
+            height: 2 * m.thickness,
         });
     }
 }
@@ -127,6 +130,7 @@ pub(crate) fn timer_rects(
     flagtag: Option<i64>,
     current: i64,
     across: bool,
+    thickness: i32,
 ) -> Vec<PixelRect> {
     const LINE_HEIGHT: f64 = 16.0;
     const LINE_WIDTH: f64 = 10.0;
@@ -135,6 +139,7 @@ pub(crate) fn timer_rects(
     let width_ratio = view_width as f64 / 640.0;
     let height_ratio = view_height as f64 / 480.0;
     let m = Metrics {
+        thickness,
         line_width: (LINE_WIDTH * height_ratio) as i32,
         line_height: (LINE_HEIGHT * height_ratio) as i32,
         digit_spacing: (DIGIT_SPACING * height_ratio) as i32,
@@ -186,7 +191,7 @@ mod tests {
 
     #[test]
     fn segments_do_not_overlap() {
-        let rects = timer_rects(800, 600, None, None, 888888 % 360000, false);
+        let rects = timer_rects(800, 600, None, None, 888888 % 360000, false, 1);
         for (i, a) in rects.iter().enumerate() {
             for b in &rects[i + 1..] {
                 let overlap = a.x < b.x + b.width
@@ -195,6 +200,18 @@ mod tests {
                     && b.y < a.y + a.height;
                 assert!(!overlap, "{a:?} {b:?}");
             }
+        }
+    }
+
+    #[test]
+    fn thick_lines_cover_the_games() {
+        let thin = timer_rects(1200, 900, None, None, 888888 % 360000, false, 1);
+        let thick = timer_rects(1200, 900, None, None, 888888 % 360000, false, 3);
+        assert_eq!(thin.len(), thick.len());
+        for (a, b) in thin.iter().zip(&thick) {
+            assert!(b.x <= a.x && b.y <= a.y, "{a:?} {b:?}");
+            assert!(b.x + b.width >= a.x + a.width && b.y + b.height >= a.y + a.height);
+            assert_eq!(a.width.min(a.height) * 3, b.width.min(b.height), "{a:?} {b:?}");
         }
     }
 }

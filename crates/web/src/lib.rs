@@ -909,7 +909,9 @@ impl Viewer {
             .unwrap_or(0.0);
         self.last_render = Some(now);
         let views = self.player.views(dt);
-        let options = self.player.render_options();
+        let mut options = self.player.render_options();
+        // The timer's lines as thick as a screen pixel, where recview and rec2vid keep the game's
+        options.timer_thickness = self.player.scale().round() as u32;
         let (Some(loaded), Some(session)) = (&self.loaded, self.player.session()) else {
             return;
         };

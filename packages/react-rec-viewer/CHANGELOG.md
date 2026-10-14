@@ -14,6 +14,7 @@
 - No flicker while resizing.
 - Objects move with the replay's time.
 - Full screen fits iPhones.
+- Thicker timer on high density screens.
 
 ## 0.1.7 - 2026-10-13
 

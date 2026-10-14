@@ -416,6 +416,8 @@ fn render(
         } else {
             TextureZoom::Game
         },
+        // The game's 1 pixel lines
+        timer_thickness: 1,
     };
 
     let fps = opts.fps as f64;

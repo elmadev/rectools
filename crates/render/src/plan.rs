@@ -228,6 +228,7 @@ pub fn plan(
                 flagtag,
                 shown,
                 matches!(scene.look, Look::Across(_)),
+                options.timer_thickness.max(1) as i32,
             );
             timer_data.extend(
                 rects

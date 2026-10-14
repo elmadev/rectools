@@ -446,6 +446,11 @@ impl Player {
         &self.settings
     }
 
+    // How many device pixels a screen pixel is
+    pub fn scale(&self) -> f64 {
+        self.scale
+    }
+
     // Size of the view in device pixels, and how many of them a screen pixel is
     pub fn resize(&mut self, width: u32, height: u32, scale: f64) {
         self.viewport = (width.max(1), height.max(1));
@@ -655,6 +660,8 @@ impl Player {
             } else {
                 TextureZoom::Game
             },
+            // The game's 1 pixel lines, which the web player makes thicker on dense screens
+            timer_thickness: 1,
         }
     }
 
