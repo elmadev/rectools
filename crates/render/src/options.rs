@@ -61,6 +61,8 @@ pub struct ViewParams {
     // Look at this point instead of following the bike, see camera::fit_bikes
     pub center: Option<Vec2>,
     pub minimap: bool,
+    // The game's "last apple" row in the bottom right, once an apple is taken
+    pub last_apple_time: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -97,7 +99,7 @@ pub struct RenderOptions {
     pub dynamic: DynamicOptions,
     pub ghosts: GhostStyle,
     pub textures: TextureZoom,
-    // How many pixels thick the timer's lines are. The game's are 1, which a high density
-    // screen makes hard to see; 0 is taken as 1.
-    pub timer_thickness: u32,
+    // View pixels to a game pixel for the timer's lines and the info panel's text. The game's
+    // is 1, which a high density screen makes hard to see; 0 is taken as 1.
+    pub hud_scale: u32,
 }

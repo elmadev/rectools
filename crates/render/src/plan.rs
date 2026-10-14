@@ -3,7 +3,7 @@
 // and encodes the passes.
 
 use crate::camera::{self, view_corner};
-use crate::hud::timer_rects;
+use crate::hud::{PixelRect, last_apple_rects, timer_rects};
 use crate::instance::{Instance, M2P, mode, snap_to_pixel_center};
 use crate::options::{CameraMode, RenderOptions, TextureZoom, ViewParams};
 use crate::scene::{Look, Scene, TextureRef, dynamic_instances};
@@ -35,6 +35,27 @@ pub(crate) struct ViewUniform {
     // 1 to snap and resize textures like the game does at each zoom
     game_textures: u32,
     _pad: u32,
+}
+
+// A rectangle of the timer or the info panel's text, in view pixels from the bottom left: the
+// text in a color of the palette, the timer as TIMER_COLOR
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
+pub(crate) struct HudRect {
+    pub rect: [f32; 4],
+    pub color: u32,
+}
+
+// Each pixel mapped to the brightest or darkest color by the LGR's timer palette map
+pub(crate) const TIMER_COLOR: u32 = u32::MAX;
+
+impl HudRect {
+    fn new(r: PixelRect, color: u32) -> HudRect {
+        HudRect {
+            rect: [r.x as f32, r.y as f32, r.width as f32, r.height as f32],
+            color,
+        }
+    }
 }
 
 // What one view draws, as ranges of the per-frame buffers
@@ -73,7 +94,7 @@ pub struct FramePlan {
     // A ViewUniform per slot, UNIFORM_STRIDE bytes apart
     pub(crate) uniforms: Vec<u8>,
     pub(crate) instances: Vec<Instance>,
-    pub(crate) timer: Vec<[f32; 4]>,
+    pub(crate) timer: Vec<HudRect>,
     pub(crate) views: Vec<ViewDraw>,
     // The instance of the frame behind the views
     pub(crate) background: u32,
@@ -139,6 +160,7 @@ pub fn plan(
     frame
         .uniforms
         .resize((UNIFORM_STRIDE * UNIFORM_SLOTS) as usize, 0);
+    let hud_scale = options.hud_scale.max(1) as i32;
     let uniforms = &mut frame.uniforms;
     let mut write_uniform = |slot: usize, u: &ViewUniform| {
         let offset = slot * UNIFORM_STRIDE as usize;
@@ -228,13 +250,21 @@ pub fn plan(
                 flagtag,
                 shown,
                 matches!(scene.look, Look::Across(_)),
-                options.timer_thickness.max(1) as i32,
+                hud_scale,
             );
-            timer_data.extend(
-                rects
-                    .iter()
-                    .map(|r| [r.x as f32, r.y as f32, r.width as f32, r.height as f32]),
-            );
+            timer_data.extend(rects.iter().map(|&r| HudRect::new(r, TIMER_COLOR)));
+        }
+        if params.last_apple_time && !matches!(scene.look, Look::Across(_)) {
+            let (apples, last) = session.apples_taken(camera::followed(session, params.follow));
+            if let (true, Some(last)) = (apples > 0, last) {
+                let rects = last_apple_rects(
+                    params.viewport[2] as i32,
+                    apples,
+                    (last * TIME_TO_CENTISECONDS) as i64,
+                    hud_scale,
+                );
+                timer_data.extend(rects.iter().map(|r| HudRect::new(r.rect, r.color as u32)));
+            }
         }
         let dynamic_end = scratch.len() as u32;
         let minimap = if params.minimap {
@@ -399,6 +429,7 @@ mod tests {
             best_time: None,
             center: None,
             minimap,
+            last_apple_time: false,
         }
     }
 
@@ -435,6 +466,45 @@ mod tests {
         );
         // The frame behind the views comes last
         assert_eq!(frame.background as usize, frame.instances.len() - 1);
+    }
+
+    #[test]
+    fn each_view_shows_its_own_riders_last_apple() {
+        let level = level();
+        let graphics = Graphics::Elma(Box::new(Lgr::stub()));
+        let scene = Scene::new(&graphics, &level, &[], &SceneOptions::default(), 4096).unwrap();
+        let mut rec = replay::start_rec(&level);
+        // Events point into the objects as the session orders them
+        let food = Session::new(&level, &rec, &[], Settings::default())
+            .objects
+            .iter()
+            .position(|o| o.kind == ObjectType::Food)
+            .unwrap();
+        let apple = elma_formats::rec::Event {
+            time: 0.0,
+            object_id: food as i16,
+            event_id: elma_formats::rec::WavEvent::Food,
+            volume: 0.99,
+        };
+        let mut took_apple = rec.rides[0].clone();
+        took_apple.events.push(apple);
+        // A two player replay where only the first player took the apple, and a ghost that
+        // took it too
+        rec.multiplayer = true;
+        rec.rides = vec![took_apple.clone(), rec.rides[0].clone()];
+        let ghosts = [Arc::new(took_apple)];
+        let session = Session::new(&level, &rec, &ghosts, Settings::default());
+        let with_apples = |follow| ViewParams {
+            last_apple_time: true,
+            ..view(follow, false, false)
+        };
+        let frame = planned(&scene, &session, &[with_apples(0), with_apples(1)]);
+        assert!(!frame.views[0].timer.is_empty());
+        // The ghost's apple isn't the second player's
+        assert!(frame.views[1].timer.is_empty());
+        // Following the ghost shows its own
+        let frame = planned(&scene, &session, &[with_apples(2)]);
+        assert!(!frame.views[0].timer.is_empty());
     }
 
     #[test]

@@ -111,17 +111,6 @@ pub fn level_lgr(lev: &[u8]) -> Result<String, JsValue> {
     Ok(Level::parse(lev, false).map_err(|e| failure("lev", e))?.lgr)
 }
 
-#[wasm_bindgen]
-#[derive(Default, Clone, Copy)]
-pub struct AppleInfo {
-    #[wasm_bindgen(readonly)]
-    pub taken: i32,
-    #[wasm_bindgen(readonly)]
-    pub total: i32,
-    #[wasm_bindgen(readonly, js_name = lastTime)]
-    pub last_time: Option<f64>,
-}
-
 // Everything a replay is drawn from. Ghosts and shirts are added before `Viewer::load`. The
 // ghosts are other replays of the level merged in, drawn in the order they were added.
 #[wasm_bindgen]
@@ -269,6 +258,7 @@ pub enum Action {
     ToggleArrows,
     ToggleTimer,
     ToggleMinimap,
+    ToggleLastAppleTime,
     ShowEverything,
 }
 
@@ -297,6 +287,7 @@ impl From<Action> for player::Action {
             Action::ToggleArrows => A::ToggleArrows,
             Action::ToggleTimer => A::ToggleTimer,
             Action::ToggleMinimap => A::ToggleMinimap,
+            Action::ToggleLastAppleTime => A::ToggleLastAppleTime,
             Action::ShowEverything => A::ShowEverything,
         }
     }
@@ -362,6 +353,8 @@ pub struct ViewerState {
     pub centered_camera: bool,
     pub timer: bool,
     pub minimap: bool,
+    #[wasm_bindgen(js_name = lastAppleTime)]
+    pub last_apple_time: bool,
     #[wasm_bindgen(js_name = autoZoom)]
     pub auto_zoom: bool,
     #[wasm_bindgen(js_name = autoZoomPaused)]
@@ -646,6 +639,7 @@ impl Viewer {
             centered_camera: s.centered_camera,
             timer: s.timer,
             minimap: s.minimap,
+            last_apple_time: s.last_apple_time,
             auto_zoom: s.auto_zoom,
             auto_zoom_paused: p.auto_zoom_paused(),
             translucent_ghosts: s.translucent_ghosts,
@@ -723,17 +717,6 @@ impl Viewer {
             }
         }
         self.player.set_level_options(o);
-    }
-
-    // Apples the followed bike has taken by now, and when it took the last one in seconds
-    #[wasm_bindgen(js_name = appleInfo)]
-    pub fn apple_info(&self) -> AppleInfo {
-        let a = self.player.apples();
-        AppleInfo {
-            taken: a.taken,
-            total: a.total,
-            last_time: a.last_time,
-        }
     }
 
     // The replay's time in seconds, which can be a moment past its last frame when it finishes
@@ -830,6 +813,11 @@ impl Viewer {
         self.player.set_minimap(minimap);
     }
 
+    #[wasm_bindgen(js_name = setLastAppleTime)]
+    pub fn set_last_apple_time(&mut self, shown: bool) {
+        self.player.set_last_apple_time(shown);
+    }
+
     // WebGL2 can't, and draws merged bikes like any bike
     #[wasm_bindgen(js_name = canDrawTranslucentGhosts)]
     pub fn can_draw_translucent_ghosts(&self) -> bool {
@@ -912,8 +900,9 @@ impl Viewer {
         self.last_render = Some(now);
         let views = self.player.views(dt);
         let mut options = self.player.render_options();
-        // The timer's lines as thick as a screen pixel, where recview and rec2vid keep the game's
-        options.timer_thickness = self.player.scale().round() as u32;
+        // The timer's lines and the info panel's pixels as big as a screen pixel, where recview
+        // and rec2vid keep the game's
+        options.hud_scale = self.player.scale().round() as u32;
         let (Some(loaded), Some(session)) = (&self.loaded, self.player.session()) else {
             return;
         };

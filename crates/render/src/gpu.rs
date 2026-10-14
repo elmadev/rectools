@@ -1,7 +1,7 @@
 use crate::instance::Instance;
 use crate::options::{GhostStyle, RenderOptions, ViewParams};
 use crate::plan::{
-    BACKGROUND_SLOT, FramePlan, MINIMAP_BORDER_SLOT, MINIMAP_SLOT, RenderError, UNIFORM_SLOTS,
+    BACKGROUND_SLOT, FramePlan, HudRect, MINIMAP_BORDER_SLOT, MINIMAP_SLOT, RenderError, UNIFORM_SLOTS,
     UNIFORM_STRIDE, ViewUniform, plan,
 };
 use crate::scene::Scene;
@@ -375,9 +375,9 @@ impl Renderer {
             attributes: &wgpu::vertex_attr_array![0 => Float32x2],
         })];
         let rects = &[Some(wgpu::VertexBufferLayout {
-            array_stride: 16,
+            array_stride: std::mem::size_of::<HudRect>() as u64,
             step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x4],
+            attributes: &wgpu::vertex_attr_array![0 => Float32x4, 1 => Uint32],
         })];
 
         use wgpu::CompareFunction as C;

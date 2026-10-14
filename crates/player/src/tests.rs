@@ -1,5 +1,5 @@
 use super::*;
-use elma_formats::lev::{Gravity, Level, Object, Polygon, TopTens, Vec2 as LevVec2};
+use elma_formats::lev::{Gravity, Level, Object, ObjectType, Polygon, TopTens, Vec2 as LevVec2};
 use elma_formats::rec::{FRAME_RATE, Frame, Rec, Ride};
 use std::sync::Arc;
 
@@ -162,7 +162,7 @@ fn keys_seek_by_the_speed_and_step_frames() {
     p.key(",", false);
     assert!(!p.is_playing());
     assert!(near(p.time(), 5.0 + 2.0 * SEEK_SECONDS - FRAME_SECONDS));
-    assert!(!p.key("x", false));
+    assert!(!p.key("j", false));
 }
 
 #[test]

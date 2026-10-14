@@ -61,6 +61,7 @@ Keys, the same as the web player's:
   A                   gravity arrows
   T                   timer
   V                   minimap
+  X                   last apple time
 
 Keys only recview has:
   K                   centered camera, or the game's classic one
@@ -184,11 +185,12 @@ type Flag = fn(&mut Prefs) -> &mut bool;
 
 impl Prefs {
     // The on/off settings by their key in the file
-    const FLAGS: [(&str, Flag); 16] = [
+    const FLAGS: [(&str, Flag); 17] = [
         ("centered_camera", |p| &mut p.settings.centered_camera),
         ("split_screen", |p| &mut p.settings.split_screen),
         ("timer", |p| &mut p.settings.timer),
         ("minimap", |p| &mut p.settings.minimap),
+        ("last_apple_time", |p| &mut p.settings.last_apple_time),
         ("muted", |p| &mut p.muted),
         ("loop", |p| &mut p.settings.looping),
         ("translucent_ghosts", |p| &mut p.settings.translucent_ghosts),

@@ -17,6 +17,7 @@
 - Thicker timer on high density screens.
 - Shirt stays on the first player in two player replays.
 - 0 zooms back to 1.00x.
+- Last apple time drawn like the game.
 
 ## 0.1.7 - 2026-10-13
 

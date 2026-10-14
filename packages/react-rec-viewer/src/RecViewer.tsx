@@ -77,6 +77,10 @@ export interface RecViewerProps extends ReplayInput {
   minimap?: boolean;
   defaultMinimap?: boolean;
   onMinimapChange?: (value: boolean) => void;
+  // The game's "last apple" time in the bottom right corner, on unless set. Not for Across.
+  lastAppleTime?: boolean;
+  defaultLastAppleTime?: boolean;
+  onLastAppleTimeChange?: (value: boolean) => void;
   // Draw bikes and objects over every picture, on unless set
   picturesInBackground?: boolean;
   defaultPicturesInBackground?: boolean;
@@ -206,6 +210,7 @@ interface State {
   centeredCamera: boolean;
   timer: boolean;
   minimap: boolean;
+  lastAppleTime: boolean;
   autoZoom: boolean;
   translucentGhosts: boolean;
   picturesInBackground: boolean;
@@ -228,6 +233,7 @@ function readState(viewer: Viewer): State {
     centeredCamera: s.centeredCamera,
     timer: s.timer,
     minimap: s.minimap,
+    lastAppleTime: s.lastAppleTime,
     autoZoom: s.autoZoom,
     translucentGhosts: s.translucentGhosts,
     picturesInBackground: s.picturesInBackground,
@@ -254,6 +260,7 @@ type Setting =
   | "centeredCamera"
   | "timer"
   | "minimap"
+  | "lastAppleTime"
   | "autoZoom"
   | "translucentGhosts"
   | "picturesInBackground";
@@ -266,6 +273,7 @@ const APPLY: { [K in Setting]: (viewer: Viewer, value: State[K]) => void } = {
   centeredCamera: (v, x) => v.setCenteredCamera(x),
   timer: (v, x) => v.setTimer(x),
   minimap: (v, x) => v.setMinimap(x),
+  lastAppleTime: (v, x) => v.setLastAppleTime(x),
   autoZoom: (v, x) => v.setAutoZoom(x),
   translucentGhosts: (v, x) => v.setTranslucentGhosts(x),
   picturesInBackground: (v, x) => v.setPicturesInBackground(x),
@@ -315,6 +323,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     centeredCamera: props.centeredCamera,
     timer: props.timer,
     minimap: props.minimap,
+    lastAppleTime: props.lastAppleTime,
     autoZoom: props.autoZoom,
     translucentGhosts: props.translucentGhosts,
     picturesInBackground: props.picturesInBackground,
@@ -328,6 +337,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     centeredCamera: props.defaultCenteredCamera ?? true,
     timer: props.defaultTimer ?? true,
     minimap: props.defaultMinimap ?? false,
+    lastAppleTime: props.defaultLastAppleTime ?? true,
     autoZoom: props.defaultAutoZoom ?? false,
     translucentGhosts: props.defaultTranslucentGhosts ?? false,
     picturesInBackground: props.defaultPicturesInBackground ?? true,
@@ -341,6 +351,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     centeredCamera: props.onCenteredCameraChange,
     timer: props.onTimerChange,
     minimap: props.onMinimapChange,
+    lastAppleTime: props.onLastAppleTimeChange,
     autoZoom: props.onAutoZoomChange,
     translucentGhosts: props.onTranslucentGhostsChange,
     picturesInBackground: props.onPicturesInBackgroundChange,
@@ -353,7 +364,6 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const timeRef = useRef<HTMLSpanElement>(null);
   const scrubRef = useRef<HTMLInputElement>(null);
-  const applesRef = useRef<HTMLSpanElement>(null);
   const scrubbing = useRef(false);
   // Whether the settings were open when the current press began: that press only closes them
   const settingsOpen = useRef(false);
@@ -592,7 +602,6 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     let frame = 0;
     let last = performance.now();
     let reported = -1;
-    let apples = NaN;
     const tick = (now: number) => {
       frame = requestAnimationFrame(tick);
       const viewer = viewerRef.current;
@@ -613,17 +622,6 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
         reported = t;
         if (timeRef.current) timeRef.current.textContent = formatTime(t);
         if (scrubRef.current && !scrubbing.current) scrubRef.current.value = String(t);
-        const info = viewer.appleInfo();
-        const key = info.taken * 1e6 + (info.lastTime ?? -1);
-        if (applesRef.current && key !== apples) {
-          apples = key;
-          applesRef.current.textContent =
-            info.total > 0
-              ? `🍎 ${info.taken}/${info.total}` +
-                (info.lastTime !== undefined ? ` ${formatTime(info.lastTime)}` : "")
-              : "";
-        }
-        info.free();
         callbacks.current.props.onTimeChange?.(t);
       }
     };
@@ -834,7 +832,6 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
             viewRef={containerRef}
             timeRef={timeRef}
             scrubRef={scrubRef}
-            applesRef={applesRef}
             scrubbing={scrubbing}
             settingsOpen={settingsOpen}
             onTogglePlay={togglePlay}
@@ -859,6 +856,8 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
             onTimer={(x) => change((v) => v.setTimer(x))}
             minimap={s?.minimap ?? false}
             onMinimap={(x) => change((v) => v.setMinimap(x))}
+            lastAppleTime={s?.lastAppleTime ?? true}
+            onLastAppleTime={(x) => change((v) => v.setLastAppleTime(x))}
             picturesInBackground={s?.picturesInBackground ?? true}
             onPicturesInBackground={(x) => change((v) => v.setPicturesInBackground(x))}
             autoZoom={s?.autoZoom ?? false}

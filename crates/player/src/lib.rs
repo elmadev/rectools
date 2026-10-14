@@ -6,7 +6,6 @@ pub mod keys;
 
 pub use keys::{Action, KEYS, KeyHelp, action_for_key};
 
-use elma_formats::lev::ObjectType;
 use render::camera::{self, AutoFrame};
 use render::{
     CameraMode, DynamicOptions, GhostStyle, MAX_ZOOM, MIN_ZOOM, RenderOptions, SceneOptions,
@@ -69,6 +68,8 @@ pub struct Settings {
     pub split_screen: bool,
     pub timer: bool,
     pub minimap: bool,
+    // The game's "last apple" row in the bottom right
+    pub last_apple_time: bool,
     // Zoom out when needed so every bike stays in view
     pub auto_zoom: bool,
     // Ghosts blue and see-through
@@ -88,6 +89,7 @@ impl Default for Settings {
             split_screen: true,
             timer: true,
             minimap: false,
+            last_apple_time: true,
             auto_zoom: false,
             translucent_ghosts: false,
             pictures_in_background: true,
@@ -149,14 +151,6 @@ pub struct Tick {
     pub seeked: bool,
     // The replay played to its end and stopped, which only happens without looping
     pub ended: bool,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct Apples {
-    pub taken: i32,
-    pub total: i32,
-    // When the last one was taken, in seconds
-    pub last_time: Option<f64>,
 }
 
 pub struct Player {
@@ -407,6 +401,9 @@ impl Player {
             Action::FollowPrevious => self.follow_next(-1),
             Action::ToggleTimer => self.settings.timer = !self.settings.timer,
             Action::ToggleMinimap => self.settings.minimap = !self.settings.minimap,
+            Action::ToggleLastAppleTime => {
+                self.settings.last_apple_time = !self.settings.last_apple_time
+            }
             // These change nothing in Across, so they leave the settings alone there
             Action::TogglePictures if !across => {
                 let level = &mut self.settings.level;
@@ -577,6 +574,10 @@ impl Player {
         self.settings.minimap = minimap;
     }
 
+    pub fn set_last_apple_time(&mut self, shown: bool) {
+        self.settings.last_apple_time = shown;
+    }
+
     // Turning it on undoes a pause
     pub fn set_auto_zoom(&mut self, auto_zoom: bool) {
         if auto_zoom && !self.settings.auto_zoom {
@@ -630,6 +631,7 @@ impl Player {
             // A level on its own has no time to show
             timer: s.timer && !content.level_only,
             minimap: s.minimap,
+            last_apple_time: s.last_apple_time && !content.level_only,
             best_time: content.best_time,
             center: self.center,
         };
@@ -661,8 +663,8 @@ impl Player {
             } else {
                 TextureZoom::Game
             },
-            // The game's 1 pixel lines, which the web player makes thicker on dense screens
-            timer_thickness: 1,
+            // The game's pixels, which the web player makes bigger on dense screens
+            hud_scale: 1,
         }
     }
 
@@ -681,34 +683,6 @@ impl Player {
     // When bike `bike` finishes, in seconds, if it does
     pub fn finish_time(&self, bike: BikeId) -> Option<f64> {
         self.content.as_ref()?.finish_times.get(bike.0).copied()?
-    }
-
-    // The apples the followed bike has taken by now
-    pub fn apples(&self) -> Apples {
-        let Some(session) = self.session() else {
-            return Apples::default();
-        };
-        let rider = camera::followed(session, self.follow.0);
-        let mut apples = Apples {
-            total: session.total_apples,
-            ..Apples::default()
-        };
-        for event in rider
-            .ride
-            .events
-            .iter()
-            .take_while(|e| e.time <= session.time)
-        {
-            let food = usize::try_from(event.object_id)
-                .ok()
-                .and_then(|i| session.objects.get(i))
-                .is_some_and(|o| o.kind == ObjectType::Food);
-            if food {
-                apples.taken += 1;
-                apples.last_time = Some(replay::time_to_seconds(event.time));
-            }
-        }
-        apples
     }
 }
 

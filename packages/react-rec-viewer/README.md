@@ -52,6 +52,7 @@ Settings with a `default…` and an `on…Change` can be controlled or left to t
 | `centeredCamera` | true | Off is the game's classic camera |
 | `timer` | true | |
 | `minimap` | false | |
+| `lastAppleTime` | true | The game's "last apple" time in the bottom right (not for Across) |
 | `autoZoom` | false | Zoom out to keep every bike in view. Moving the camera pauses it. |
 | `translucentGhosts` | false | Merged replays blue and see-through (not on WebGL2) |
 | `picturesInBackground` | true | Bikes and objects over every picture |
@@ -100,6 +101,7 @@ full screen.
 | Shift G | Grass, pictures and the level's own ground and sky on |
 | T | Timer |
 | V | Minimap |
+| X | Last apple time |
 
 `keyList()` returns them once the engine is loaded.
 

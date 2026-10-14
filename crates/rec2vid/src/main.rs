@@ -401,6 +401,7 @@ fn render(
         minimap: opts.minimap,
         best_time,
         center: None,
+        last_apple_time: false,
     };
     let render_options = RenderOptions {
         dynamic: DynamicOptions {
@@ -417,7 +418,7 @@ fn render(
             TextureZoom::Game
         },
         // The game's 1 pixel lines
-        timer_thickness: 1,
+        hud_scale: 1,
     };
 
     let fps = opts.fps as f64;

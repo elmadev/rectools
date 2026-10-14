@@ -117,9 +117,14 @@ fn apples_go_when_taken_and_count_for_the_rider() {
     play_to(&mut s, 7);
     assert_eq!(taken(&s), [false, true, false, false]);
     assert_eq!(s.riders[0].apple_count, 1);
+    let (count, first) = s.apples_taken(&s.riders[0]);
+    assert_eq!(count, 1);
     play_to(&mut s, 12);
     assert_eq!(taken(&s), [true, true, false, false]);
     assert_eq!(s.riders[0].apple_count, 2);
+    let (count, last) = s.apples_taken(&s.riders[0]);
+    assert_eq!(count, 2);
+    assert!(last > first);
 }
 
 #[test]
@@ -247,6 +252,8 @@ fn ghosts_take_no_apples() {
     play_to(&mut s, 6);
     assert_eq!(taken(&s), [false; 4]);
     assert_eq!(s.ghosts[0].apple_count, 0);
+    // Though what it took still counts for showing
+    assert_eq!(s.apples_taken(&s.ghosts[0]).0, 1);
 }
 
 #[test]

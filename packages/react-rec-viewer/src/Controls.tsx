@@ -22,7 +22,6 @@ export interface ControlsProps {
   // Written by the render loop, so playing never re-renders React
   timeRef: RefObject<HTMLSpanElement>;
   scrubRef: RefObject<HTMLInputElement>;
-  applesRef: RefObject<HTMLSpanElement>;
   scrubbing: MutableRefObject<boolean>;
   // Whether the settings are open, for the view: the press that closes them doesn't play or pause
   settingsOpen: MutableRefObject<boolean>;
@@ -42,6 +41,8 @@ export interface ControlsProps {
   onTimer(value: boolean): void;
   minimap: boolean;
   onMinimap(value: boolean): void;
+  lastAppleTime: boolean;
+  onLastAppleTime(value: boolean): void;
   picturesInBackground: boolean;
   onPicturesInBackground(value: boolean): void;
   autoZoom: boolean;
@@ -192,6 +193,7 @@ function Settings(p: ControlsProps) {
           <Toggle label="Centered camera" value={p.centeredCamera} onChange={p.onCenteredCamera} />
           <Toggle label="Timer" value={p.timer} onChange={p.onTimer} />
           <Toggle label="Minimap" value={p.minimap} onChange={p.onMinimap} />
+          {!p.across && <Toggle label="Last apple time" value={p.lastAppleTime} onChange={p.onLastAppleTime} />}
           {p.bikeCount > 1 && (
             <>
               <Toggle label="Zoom out to show every bike" value={p.autoZoom} onChange={p.onAutoZoom} />
@@ -356,7 +358,6 @@ export function Controls(p: ControlsProps) {
           <span style={numbers}>
             <span ref={p.timeRef}>{formatTime(0)}</span> / {formatTime(p.duration)}
           </span>
-          <span ref={p.applesRef} style={numbers} title="Apples taken, and when the last one was" />
           <Button label="Slower" onClick={p.onSlower} disabled={disabled}>
             <Icon name="slower" />
           </Button>

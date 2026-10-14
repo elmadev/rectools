@@ -30,6 +30,7 @@ pub enum Action {
     ToggleArrows,
     ToggleTimer,
     ToggleMinimap,
+    ToggleLastAppleTime,
     // Grass, pictures and the level's own ground and sky on
     ShowEverything,
 }
@@ -145,6 +146,10 @@ const BINDINGS: &[Binding] = &[
         keys: &["v", "V"],
         action: Action::ToggleMinimap,
     },
+    Binding {
+        keys: &["x", "X"],
+        action: Action::ToggleLastAppleTime,
+    },
 ];
 
 // What `key` does, if anything
@@ -201,6 +206,7 @@ pub const KEYS: &[KeyHelp] = &[
     level("A", "Gravity arrows", true),
     help("T", "Timer"),
     help("V", "Minimap"),
+    help("X", "Last apple time"),
     level(
         "Shift G",
         "Grass, pictures and the level's own ground and sky on",
@@ -220,7 +226,8 @@ mod tests {
         assert_eq!(action_for_key("N"), Some(Action::FollowPrevious));
         assert_eq!(action_for_key("g"), Some(Action::ToggleGrass));
         assert_eq!(action_for_key("G"), Some(Action::ShowEverything));
-        assert_eq!(action_for_key("x"), None);
+        assert_eq!(action_for_key("x"), Some(Action::ToggleLastAppleTime));
+        assert_eq!(action_for_key("j"), None);
     }
 
     #[test]

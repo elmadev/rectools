@@ -188,6 +188,7 @@ fn run(opts: &Options) -> Result<(), String> {
         minimap: false,
         best_time: loaded.best_time,
         center: None,
+        last_apple_time: false,
     };
     let options = RenderOptions {
         textures: if opts.auto_zoom {

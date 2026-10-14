@@ -332,25 +332,42 @@ fn fs_front_grass(in: FullscreenOut) -> @builtin(frag_depth) f32 {
     return 1.0;
 }
 
-// Timer: every covered pixel is mapped to the brightest or darkest color
+// Timer and text: a timer pixel is mapped to the brightest or darkest color, text is drawn
+// in its own color
 
 @group(1) @binding(0) var scene_copy: texture_2d<u32>;
 
+// HudRect's color for the timer
+const TIMER_COLOR: u32 = 0xffffffffu;
+
+struct HudOut {
+    @builtin(position) position: vec4<f32>,
+    @location(0) @interpolate(flat) color: u32,
+}
+
 @vertex
-fn vs_timer(@builtin(vertex_index) vertex: u32, @location(0) rect: vec4<f32>) -> FullscreenOut {
+fn vs_timer(
+    @builtin(vertex_index) vertex: u32,
+    @location(0) rect: vec4<f32>,
+    @location(1) color: u32,
+) -> HudOut {
     var corners = array<vec2<f32>, 6>(
         vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 0.0), vec2<f32>(0.0, 1.0),
         vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 0.0), vec2<f32>(1.0, 1.0),
     );
     // rect is x, y, width, height in view pixels from the bottom left
     let pixels = rect.xy + corners[vertex] * rect.zw;
-    var out: FullscreenOut;
+    var out: HudOut;
     out.position = vec4<f32>(pixels / view.size * 2.0 - vec2<f32>(1.0, 1.0), 0.0, 1.0);
+    out.color = color;
     return out;
 }
 
 @fragment
-fn fs_timer(in: FullscreenOut) -> @location(0) u32 {
+fn fs_timer(in: HudOut) -> @location(0) u32 {
+    if in.color != TIMER_COLOR {
+        return in.color;
+    }
     let c = textureLoad(scene_copy, vec2<i32>(floor(in.position.xy)), 0).r;
     return textureLoad(timer_map, vec2<i32>(i32(c), 0), 0).r;
 }

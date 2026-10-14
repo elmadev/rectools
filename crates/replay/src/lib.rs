@@ -578,6 +578,24 @@ pub struct Session {
 }
 
 impl Session {
+    // How many apples `rider` has taken by now, and when it took the last one in game time.
+    // Counted from its events, so it works for ghosts, which take none in the session.
+    pub fn apples_taken(&self, rider: &Rider) -> (i32, Option<f64>) {
+        let mut taken = 0;
+        let mut last = None;
+        for event in rider.ride.events.iter().take_while(|e| e.time <= self.time) {
+            let food = usize::try_from(event.object_id)
+                .ok()
+                .and_then(|i| self.objects.get(i))
+                .is_some_and(|o| o.kind == ObjectType::Food);
+            if food {
+                taken += 1;
+                last = Some(event.time);
+            }
+        }
+        (taken, last)
+    }
+
     pub fn new(level: &Level, rec: &Rec, ghosts: &[Arc<Ride>], settings: Settings) -> Session {
         let mut session = Session::unplayed(level, rec, ghosts, settings);
         // Each bike's end is when it finishes, which its touches of the objects tell. A two
