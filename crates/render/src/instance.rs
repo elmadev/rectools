@@ -58,6 +58,8 @@ pub struct Instance {
     pub transparency: u32,
     pub color: u32,
     pub layer: u32,
+    // The atlas layers of `image` and `texture`: image | texture << 8
+    pub atlas_layers: u32,
 }
 
 impl Instance {
@@ -75,17 +77,20 @@ impl Instance {
             transparency: NO_TRANSPARENCY,
             color: 0,
             layer: layer::OTHER,
+            atlas_layers: 0,
         }
     }
 
     pub fn image(mut self, rect: AtlasRect, transparency: Option<u8>) -> Instance {
         self.image = rect.packed();
+        self.atlas_layers = (self.atlas_layers & !0xff) | rect.layer;
         self.transparency = transparency.map(u32::from).unwrap_or(NO_TRANSPARENCY);
         self
     }
 
     pub fn texture(mut self, rect: AtlasRect, game_size: (f64, f64)) -> Instance {
         self.texture = rect.packed();
+        self.atlas_layers = (self.atlas_layers & 0xff) | rect.layer << 8;
         self.texture_size = [game_size.0 as f32, game_size.1 as f32];
         self
     }

@@ -366,7 +366,7 @@ impl Renderer {
             attributes: &wgpu::vertex_attr_array![
                 0 => Float32x2, 1 => Float32x2, 2 => Float32x2, 3 => Float32, 4 => Uint32,
                 5 => Uint32x4, 6 => Uint32x4, 7 => Float32x2, 8 => Uint32, 9 => Uint32,
-                10 => Uint32, 11 => Uint32
+                10 => Uint32, 11 => Uint32, 12 => Uint32
             ],
         })];
         let polygons = &[Some(wgpu::VertexBufferLayout {

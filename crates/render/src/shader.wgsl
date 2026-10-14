@@ -43,6 +43,8 @@ struct InstanceIn {
     @location(9) transparency: u32,
     @location(10) color: u32,
     @location(11) layer: u32,
+    // image | texture << 8
+    @location(12) atlas_layers: u32,
 }
 
 struct VertexOut {
@@ -53,6 +55,8 @@ struct VertexOut {
     @location(3) @interpolate(flat) texture: vec4<u32>,
     @location(4) @interpolate(flat) texture_size: vec2<f32>,
     @location(5) @interpolate(flat) params: vec4<u32>,
+    // The atlas layers of image and texture
+    @location(6) @interpolate(flat) atlas_layers: vec2<u32>,
 }
 
 fn to_clip(world: vec2<f32>, corner: vec2<f32>, depth: f32) -> vec4<f32> {
@@ -89,23 +93,21 @@ fn vs_instance(@builtin(vertex_index) vertex: u32, instance: InstanceIn) -> Vert
     out.texture = instance.texture;
     out.texture_size = instance.texture_size;
     out.params = vec4<u32>(instance.mode, instance.transparency, instance.color, instance.layer);
+    out.atlas_layers = vec2<u32>(instance.atlas_layers & 0xffu, instance.atlas_layers >> 8u);
     return out;
 }
 
-fn atlas_texel(rect: vec4<u32>, x: u32, y: u32) -> u32 {
-    return textureLoad(atlas, vec2<u32>(rect.y + x, rect.z + y), rect.x, 0).r;
-}
-
-fn rect_size(rect: vec4<u32>) -> vec2<u32> {
-    return vec2<u32>(rect.w & 0xffffu, rect.w >> 16u);
+// An image's place in the atlas is its rect, x, y, width and height, and its layer
+fn atlas_texel(rect: vec4<u32>, layer: u32, x: u32, y: u32) -> u32 {
+    return textureLoad(atlas, vec2<u32>(rect.x + x, rect.y + y), layer, 0).r;
 }
 
 // The texel of `rect` at (s, t) in 0..1
-fn image_texel(rect: vec4<u32>, st: vec2<f32>) -> u32 {
-    let size = rect_size(rect);
+fn image_texel(rect: vec4<u32>, layer: u32, st: vec2<f32>) -> u32 {
+    let size = rect.zw;
     let x = min(u32(max(floor(st.x * f32(size.x)), 0.0)), size.x - 1u);
     let y = min(u32(max(floor(st.y * f32(size.y)), 0.0)), size.y - 1u);
-    return atlas_texel(rect, x, y);
+    return atlas_texel(rect, layer, x, y);
 }
 
 fn positive_mod(a: f32, n: f32) -> f32 {
@@ -114,20 +116,20 @@ fn positive_mod(a: f32, n: f32) -> f32 {
 
 // A texture pixel at game pixel (gx, gy), counted from its bottom left corner. Textures are
 // stored bottom row first.
-fn texture_texel(rect: vec4<u32>, game_size: vec2<f32>, gx: f32, gy: f32) -> u32 {
-    let size = rect_size(rect);
+fn texture_texel(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, gx: f32, gy: f32) -> u32 {
+    let size = rect.zw;
     let x = positive_mod(gx, game_size.x);
     let y = positive_mod(gy, game_size.y);
     let sx = min(u32(x * f32(size.x) / game_size.x), size.x - 1u);
     let sy = min(u32(y * f32(size.y) / game_size.y), size.y - 1u);
-    return atlas_texel(rect, sx, sy);
+    return atlas_texel(rect, layer, sx, sy);
 }
 
 // The game resizes textures for the zoom (before flipping them) and tiles the result. Maps a
 // pixel of the zoomed, tiled texture back to the texture.
-fn zoomed_texel(rect: vec4<u32>, game_size: vec2<f32>, zx: f32, zy: f32) -> u32 {
+fn zoomed_texel(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, zx: f32, zy: f32) -> u32 {
     if (view.texture_scale == 1.0) {
-        return texture_texel(rect, game_size, zx, zy);
+        return texture_texel(rect, layer, game_size, zx, zy);
     }
     let height = max(floor(game_size.y * view.texture_scale), 1.0);
     let scale = height / game_size.y;
@@ -136,7 +138,7 @@ fn zoomed_texel(rect: vec4<u32>, game_size: vec2<f32>, zx: f32, zy: f32) -> u32 
     let y = positive_mod(zy, height);
     let gx = min(floor(x / scale), game_size.x - 1.0);
     let gy = game_size.y - 1.0 - min(floor((height - 1.0 - y) / scale), game_size.y - 1.0);
-    return texture_texel(rect, game_size, gx, gy);
+    return texture_texel(rect, layer, game_size, gx, gy);
 }
 
 const GAME_PIXELS_PER_METER: f32 = 48.0;
@@ -144,11 +146,11 @@ const GAME_PIXELS_PER_METER: f32 = 48.0;
 fn world_texture(in: VertexOut) -> u32 {
     if (view.game_textures != 0u) {
         let p = floor((in.world - view.canvas_origin) * view.pixels_per_meter);
-        return zoomed_texel(in.texture, in.texture_size, p.x, p.y);
+        return zoomed_texel(in.texture, in.atlas_layers.y, in.texture_size, p.x, p.y);
     }
     // Locked to the level: the same texture pixel stays at the same place at any zoom
     let p = floor((in.world - view.canvas_origin) * GAME_PIXELS_PER_METER);
-    return texture_texel(in.texture, in.texture_size, p.x, p.y);
+    return texture_texel(in.texture, in.atlas_layers.y, in.texture_size, p.x, p.y);
 }
 
 fn sky_texture(in: VertexOut) -> u32 {
@@ -156,18 +158,18 @@ fn sky_texture(in: VertexOut) -> u32 {
         let x = floor(in.position.x - view.offset.x);
         let y = floor(view.offset.y + view.size.y - in.position.y);
         let gx = floor((x + view.sky_x) / view.texture_scale);
-        return texture_texel(in.texture, in.texture_size, gx, floor(y / view.texture_scale));
+        return texture_texel(in.texture, in.atlas_layers.y, in.texture_size, gx, floor(y / view.texture_scale));
     }
     let x = (in.position.x - view.offset.x) / view.texture_scale;
     let y = (view.offset.y + view.size.y - in.position.y) / view.texture_scale;
-    return texture_texel(in.texture, in.texture_size, floor(x + view.sky_x), floor(y));
+    return texture_texel(in.texture, in.atlas_layers.y, in.texture_size, floor(x + view.sky_x), floor(y));
 }
 
 fn shade(in: VertexOut) -> u32 {
     let mode = in.params.x;
     // Pictures, masks and recolored pictures skip their transparent pixels
     if (mode == MODE_IMAGE || mode == MODE_MASKED_TEXTURE || mode == MODE_RECOLOR) {
-        let c = image_texel(in.image, in.st);
+        let c = image_texel(in.image, in.atlas_layers.x, in.st);
         if (c == in.params.y) {
             discard;
         }

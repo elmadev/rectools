@@ -1,6 +1,6 @@
 use elma_formats::pic::Pic8;
 
-// Where an image lives in the atlas: layer, x, y, width | height << 16
+// Where an image lives in the atlas
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AtlasRect {
     pub layer: u32,
@@ -11,8 +11,10 @@ pub struct AtlasRect {
 }
 
 impl AtlasRect {
+    // As the shader gets it, with the layer apart. Every value stays under 16 bits: some
+    // phones' GPUs pass integers between shader stages with only 16 (Adreno, in Firefox).
     pub fn packed(&self) -> [u32; 4] {
-        [self.layer, self.x, self.y, self.width | (self.height << 16)]
+        [self.x, self.y, self.width, self.height]
     }
 }
 
