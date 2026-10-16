@@ -21,7 +21,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::keyboard::{Key, ModifiersState, NamedKey};
+use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 const USAGE: &str = "Usage: recview [input.rec | input.lev] [options]
@@ -31,7 +31,9 @@ on the window: the first is played, the others are drawn as ghosts. Replays of t
 level that is playing are added to it as ghosts; others replace it.
 
 A .lev opens the level on its own to look around: drag to move, the wheel to zoom
-and R to see all of it again. Dropping a replay of it plays the replay.
+and R to see all of it again. Dropping a replay of it plays the replay. A replay
+finds its level in lev/ or next to it; when it doesn't, the level opened next is
+the one it plays on, as is a level opened together with it.
 
 Options:
   --data <dir>        game folder with elma.res, lev/, lgr/, rec/ and bmp/. By default
@@ -71,7 +73,7 @@ Keys only recview has:
   M                   sound on / off
   L                   loop on / off
   O                   open replays or a level
-  shift O             choose the game folder
+  shift O             choose the game folder, and play again from it
   escape, Q           quit";
 
 struct Args {
@@ -343,9 +345,12 @@ enum LevelChoice {
 // Elma replay asks for. None when cancelled.
 fn ask_for_level(name: Option<&str>, replay: &Path, across: bool) -> Option<LevelChoice> {
     let description = match name {
-        Some(name) => format!("The level of this replay, {name}, isn't in the game folder's lev/."),
-        None => "None of the levels in the game folder's lev/ is the one this replay was \
-                 recorded on."
+        Some(name) => format!(
+            "The level of this replay, {name}, isn't in the game folder's lev/ or next to \
+             the replay."
+        ),
+        None => "None of the levels in the game folder's lev/ or next to the replay is the one \
+                 it was recorded on."
             .to_string(),
     };
     let (file, folder) = ("Choose the level…", "Choose another folder…");
@@ -388,11 +393,26 @@ fn is_level(path: &Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("lev"))
 }
 
-struct Current {
-    // What was opened, so ghosts can be added later
+// A level to look around, opened like a replay
+fn level_only(level: &Path) -> Opened {
+    Opened {
+        input: level.to_string_lossy().into_owned(),
+        nick: String::new(),
+        ghosts: Vec::new(),
+    }
+}
+
+// A replay with its ghosts, as it was opened
+#[derive(Clone)]
+struct Opened {
     input: String,
     nick: String,
     ghosts: Vec<Ghost>,
+}
+
+struct Current {
+    // What was opened, so ghosts can be added later
+    opened: Opened,
     // The level chosen for the replay when lev/ didn't have it
     level_file: Option<PathBuf>,
     level_id: i32,
@@ -415,6 +435,10 @@ struct Gpu {
 struct App {
     args: Args,
     folder: Option<GameFolder>,
+    // Whether `folder` was chosen with shift O, which makes it win over the one a replay is in
+    folder_chosen: bool,
+    // The replay whose level wasn't found, to play on the level opened next
+    waiting: Option<Opened>,
     // The sounds and the folder and game they were loaded for
     sounds: Option<((PathBuf, bool), Arc<Sounds>)>,
     gpu: Option<Gpu>,
@@ -430,7 +454,6 @@ struct App {
     error: Option<String>,
     last_frame: Instant,
     last_title: Instant,
-    modifiers: ModifiersState,
     cursor: (f64, f64),
     // Where the left button went down, and whether it dragged since: a click plays or pauses
     pressed: Option<(f64, f64)>,
@@ -479,8 +502,8 @@ impl App {
         Ok(())
     }
 
-    // The folder to load `replay` from: --data, the folder it is in, the one chosen last
-    // time, or ask
+    // The folder to load `replay` from: one chosen with shift O, --data, the folder it is in,
+    // the one chosen last time, or ask
     fn choose_folder(&mut self, replay: &Path) -> Option<()> {
         // A level could be either game's, so it goes with the open folder
         let across = if is_level(replay) {
@@ -489,10 +512,10 @@ impl App {
             is_across_replay(replay)
         };
         let open = self.folder.as_ref().filter(|f| f.is_across() == across);
-        let wanted = self
-            .args
-            .data
-            .clone()
+        let wanted = open
+            .filter(|_| self.folder_chosen)
+            .map(|f| f.dir.clone())
+            .or_else(|| self.args.data.clone())
             .or_else(|| folder_of(replay, across))
             .or_else(|| open.map(|f| f.dir.clone()))
             .or_else(|| saved_folder(across));
@@ -510,27 +533,29 @@ impl App {
         Some(())
     }
 
-    // Play the first replay, with the others as ghosts. A merge adds ghosts to the replay
-    // playing, or follows another of its replays, carrying on from the same moment.
-    fn open(&mut self, input: &str, nick: &str, ghosts: &[Ghost], merge: bool) {
+    // Play the first replay, with the others as ghosts, on `level_file` or the level it
+    // finds. A merge adds ghosts to the replay playing, or follows another of its replays,
+    // carrying on from the same moment.
+    fn open(&mut self, opened: Opened, level_file: Option<PathBuf>, merge: bool) {
         if self.gpu.is_none() {
             return;
         }
-        let replay = PathBuf::from(input);
+        let replay = PathBuf::from(&opened.input);
         if self.choose_folder(&replay).is_none() {
             return;
         }
-        // The same level as before when ghosts are added
-        let mut level_file = match merge {
-            true => self.current.as_ref().and_then(|c| c.level_file.clone()),
-            false => None,
-        };
+        let mut level_file = level_file;
         let loaded = loop {
             let folder = self.folder.as_ref().unwrap();
             let loaded = if is_level(&replay) {
-                folder.load_level(input)
+                folder.load_level(&opened.input)
             } else {
-                folder.load(input, nick, ghosts, level_file.as_deref())
+                folder.load(
+                    &opened.input,
+                    &opened.nick,
+                    &opened.ghosts,
+                    level_file.as_deref(),
+                )
             };
             match loaded {
                 Ok(loaded) => break loaded,
@@ -541,16 +566,48 @@ impl App {
                         Some(LevelChoice::Folder) => {
                             level_file = None;
                             let Some(picked) = pick_folder(across) else {
+                                self.waiting = Some(opened);
                                 return;
                             };
                             self.folder = Some(picked);
+                            self.folder_chosen = true;
                         }
-                        None => return,
+                        None => {
+                            self.waiting = Some(opened);
+                            return;
+                        }
                     }
                 }
                 Err(e) => return show_error(&e),
             }
         };
+        self.show(opened, level_file, loaded, merge);
+    }
+
+    // Plays `opened` on `level`, or shows the level on its own when the replay wasn't
+    // recorded on it, and the replay keeps waiting for its level
+    fn open_on_level(&mut self, opened: Opened, level: PathBuf) {
+        if self.gpu.is_none() || self.choose_folder(Path::new(&opened.input)).is_none() {
+            return;
+        }
+        let folder = self.folder.as_ref().unwrap();
+        match folder.load(&opened.input, &opened.nick, &opened.ghosts, Some(&level)) {
+            Ok(loaded) => self.show(opened, Some(level), loaded, false),
+            Err(game_data::Error::LevelChanged { .. } | game_data::Error::WrongLevel { .. }) => {
+                self.waiting = Some(opened);
+                self.open(level_only(&level), None, false);
+            }
+            Err(e) => show_error(&e),
+        }
+    }
+
+    fn show(
+        &mut self,
+        opened: Opened,
+        level_file: Option<PathBuf>,
+        loaded: game_data::Loaded,
+        merge: bool,
+    ) {
         for warning in &loaded.warnings {
             eprintln!("recview: {warning}");
         }
@@ -561,8 +618,14 @@ impl App {
             Ok(scene) => scene,
             Err(e) => return show_error(e),
         };
-        // Adding a ghost keeps the sound going instead of starting the motors again
-        let reused = match merge {
+        // Adding a ghost keeps the sound going instead of starting the motors again, unless
+        // the sounds are another folder's
+        let folder = self.folder.as_ref().unwrap();
+        let same_sounds = self
+            .sounds
+            .as_ref()
+            .is_some_and(|((dir, across), _)| *dir == folder.dir && *across == folder.is_across());
+        let reused = match merge && same_sounds {
             true => self.current.as_mut().and_then(|c| c.speaker.take()),
             false => None,
         };
@@ -579,13 +642,14 @@ impl App {
             self.player.set_zoom(self.saved.settings.zoom);
             self.player.recenter();
         }
+        if !loaded.level_only {
+            self.waiting = None;
+        }
         self.current = Some(Current {
-            input: input.to_string(),
-            nick: nick.to_string(),
-            ghosts: ghosts.to_vec(),
+            name: title_name(&loaded.path, opened.ghosts.len()),
+            opened,
             level_file,
             level_id: loaded.rec.level_id,
-            name: title_name(&loaded.path, ghosts.len()),
             loaded,
             scene,
             built_with,
@@ -593,6 +657,18 @@ impl App {
         });
         self.last_frame = Instant::now();
         self.gpu.as_ref().unwrap().window.focus_window();
+    }
+
+    // What is shown again from the folder chosen with shift O: the replay waiting for its
+    // level, or the one playing, from the same moment
+    fn reopen(&mut self) {
+        if let Some(waiting) = self.waiting.take() {
+            return self.open(waiting, None, false);
+        }
+        if let Some(current) = &self.current {
+            let (opened, level_file) = (current.opened.clone(), current.level_file.clone());
+            self.open(opened, level_file, true);
+        }
     }
 
     // The sounds are loaded once per game folder
@@ -631,14 +707,19 @@ impl App {
             return;
         }
         let paths = std::mem::take(&mut self.pending);
-        if let Some(level) = paths.iter().find(|p| is_level(p)) {
-            return self.open(&level.to_string_lossy(), "", &[], false);
-        }
+        let level = paths.iter().find(|p| is_level(p)).cloned();
         let recs: Vec<String> = paths
             .iter()
             .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("rec")))
             .map(|p| p.to_string_lossy().into_owned())
             .collect();
+        // A level on its own plays the replay waiting for it, if there is one
+        if let Some(level) = level.clone().filter(|_| recs.is_empty()) {
+            return match self.waiting.take() {
+                Some(waiting) => self.open_on_level(waiting, level),
+                None => self.open(level_only(&level), None, false),
+            };
+        }
         if recs.is_empty() {
             return show_error("only .rec and .lev files can be opened");
         }
@@ -650,8 +731,9 @@ impl App {
         // Replays of the level that is playing join it as ghosts
         if let Some(current) = self.current.as_ref().filter(|_| !self.player.level_only()) {
             let canonical = |p: &String| game_data::canonical(Path::new(p));
-            let loaded: Vec<PathBuf> = std::iter::once(&current.input)
-                .chain(current.ghosts.iter().map(|g| &g.path))
+            let opened = &current.opened;
+            let loaded: Vec<PathBuf> = std::iter::once(&opened.input)
+                .chain(opened.ghosts.iter().map(|g| &g.path))
                 .map(canonical)
                 .collect();
             let new: Vec<&String> = recs
@@ -661,23 +743,30 @@ impl App {
             if new.is_empty() {
                 return;
             }
-            if new.iter().all(|r| level_id_of(r) == Some(current.level_id)) {
-                let mut ghosts = current.ghosts.clone();
-                ghosts.extend(new.into_iter().map(as_ghost));
-                let (input, nick) = (current.input.clone(), current.nick.clone());
-                return self.open(&input, &nick, &ghosts, true);
+            if level.is_none() && new.iter().all(|r| level_id_of(r) == Some(current.level_id)) {
+                let mut opened = opened.clone();
+                opened.ghosts.extend(new.into_iter().map(as_ghost));
+                return self.open(opened, current.level_file.clone(), true);
             }
         }
 
-        // Otherwise the first replay starts over, with the ones of the same level as ghosts
+        // Otherwise the first replay starts over, with the ones of the same level as ghosts,
+        // on the level opened with it
         let (main, others) = recs.split_first().unwrap();
-        let level = level_id_of(main);
-        let ghosts: Vec<Ghost> = others
-            .iter()
-            .filter(|r| level_id_of(r) == level)
-            .map(as_ghost)
-            .collect();
-        self.open(main, "", &ghosts, false);
+        let level_id = level_id_of(main);
+        let opened = Opened {
+            input: main.clone(),
+            nick: String::new(),
+            ghosts: others
+                .iter()
+                .filter(|r| level_id_of(r) == level_id)
+                .map(as_ghost)
+                .collect(),
+        };
+        match level {
+            Some(level) => self.open_on_level(opened, level),
+            None => self.open(opened, None, false),
+        }
     }
 
     fn save_prefs(&mut self) {
@@ -818,7 +907,6 @@ impl App {
         if self.player.key(&name, repeat) || repeat {
             return;
         }
-        let shift = self.modifiers.shift_key();
         let p = &mut self.player;
         let s = *p.settings();
         match name.to_lowercase().as_str() {
@@ -837,10 +925,16 @@ impl App {
                     speaker.muted = self.muted;
                 }
             }
-            "o" if shift => {
-                let across = self.folder.as_ref().is_some_and(GameFolder::is_across);
+            // Shift gives a capital, which a modifier state left over from a dialog can't spoil
+            "o" if name == "O" => {
+                let across = match &self.waiting {
+                    Some(waiting) => is_across_replay(Path::new(&waiting.input)),
+                    None => self.folder.as_ref().is_some_and(GameFolder::is_across),
+                };
                 if let Some(folder) = pick_folder(across) {
                     self.folder = Some(folder);
+                    self.folder_chosen = true;
+                    self.reopen();
                 }
             }
             "o" => {
@@ -886,9 +980,12 @@ impl ApplicationHandler<Vec<PathBuf>> for App {
             return;
         }
         if let Some(input) = self.args.input.take() {
-            let nick = std::mem::take(&mut self.args.nick);
-            let ghosts = std::mem::take(&mut self.args.ghosts);
-            self.open(&input, &nick, &ghosts, false);
+            let opened = Opened {
+                input,
+                nick: std::mem::take(&mut self.args.nick),
+                ghosts: std::mem::take(&mut self.args.ghosts),
+            };
+            self.open(opened, None, false);
         }
     }
 
@@ -906,7 +1003,6 @@ impl ApplicationHandler<Vec<PathBuf>> for App {
             WindowEvent::Resized(size) => self.resize(size.width, size.height),
             WindowEvent::RedrawRequested => self.redraw(),
             WindowEvent::DroppedFile(path) => self.pending.push(path),
-            WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state == ElementState::Pressed {
                     self.key(event_loop, &event.logical_key, event.repeat);
@@ -996,6 +1092,8 @@ fn main() -> ExitCode {
         last_save: Instant::now(),
         args,
         folder: None,
+        folder_chosen: false,
+        waiting: None,
         sounds: None,
         gpu: None,
         current: None,
@@ -1003,7 +1101,6 @@ fn main() -> ExitCode {
         error: None,
         last_frame: Instant::now(),
         last_title: Instant::now(),
-        modifiers: ModifiersState::empty(),
         cursor: (0.0, 0.0),
         pressed: None,
         dragged: false,
