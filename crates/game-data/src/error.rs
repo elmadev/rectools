@@ -30,8 +30,8 @@ pub enum Error {
     // A file of `kind` that isn't there, described by `what`
     #[error("cannot find {what}")]
     NotFound { kind: FileKind, what: String },
-    // A replay's level isn't in lev/: the file name an Elma replay asks for, or None for
-    // Across, which doesn't store it
+    // A replay's level isn't in lev/ or next to it: the file name an Elma replay asks for, or
+    // None for Across, which doesn't store it
     #[error("{}", match .0 {
         Some(name) => format!("cannot find the level for this replay: {name}"),
         None => "cannot find the level of this replay".into(),

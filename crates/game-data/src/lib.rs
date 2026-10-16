@@ -151,15 +151,37 @@ impl GameFolder {
         }
     }
 
-    // The levels in lev/, for finding the one an Across replay was recorded on
-    fn across_levels(&self, kinds: &[elma_formats::lev::ObjectType]) -> Vec<(PathBuf, Level)> {
-        let Ok(dir) = std::fs::read_dir(self.dir.join("lev")) else {
-            return Vec::new();
+    // The levels in lev/ and the .lev and .txt files next to `replay`, for finding the one an
+    // Across replay was recorded on
+    fn across_levels(
+        &self,
+        replay: &Path,
+        kinds: &[elma_formats::lev::ObjectType],
+    ) -> Vec<(PathBuf, Level)> {
+        let lev = self.dir.join("lev");
+        let mut dirs = vec![lev.clone()];
+        if let Some(dir) = replay.parent()
+            && canonical(dir) != canonical(&lev)
+        {
+            dirs.push(dir.to_path_buf());
+        }
+        let is_level = |p: &Path| {
+            p.extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("lev") || e.eq_ignore_ascii_case("txt"))
         };
-        let mut paths: Vec<PathBuf> = dir.flatten().map(|e| e.path()).collect();
-        paths.sort();
-        paths
-            .into_iter()
+        dirs.iter()
+            .enumerate()
+            .flat_map(|(i, dir)| {
+                let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .map(|e| e.path())
+                    .filter(|p| i == 0 || (p.is_file() && is_level(p)))
+                    .collect();
+                paths.sort();
+                paths
+            })
             .filter_map(|path| {
                 let data = std::fs::read(&path).ok()?;
                 // Elma's levels, when the games share the folder
@@ -191,7 +213,7 @@ impl GameFolder {
                         let level = across::parse_level(file, &data, &kinds)?;
                         vec![(file.to_path_buf(), level)]
                     }
-                    None => self.across_levels(&kinds),
+                    None => self.across_levels(&path, &kinds),
                 };
                 let matches = across::match_level(&rec, &levels);
                 let Some(&found) = matches.first() else {
@@ -331,6 +353,33 @@ impl GameFolder {
         Ok(loaded)
     }
 
+    // The level of the Elma replay at `replay`: in lev/ or next to the replay, preferring the
+    // one it was recorded on when both have a level of that name
+    fn find_level(&self, replay: &Path, rec: &Rec) -> Result<Level, Error> {
+        let dirs = [
+            Some(self.dir.join("lev")),
+            replay.parent().map(Path::to_path_buf),
+        ];
+        let mut found: Vec<(PathBuf, Level)> = Vec::new();
+        for dir in dirs.iter().flatten() {
+            if let Some(lev) = find_file(dir, &rec.level_filename)
+                && !found.iter().any(|(p, _)| canonical(p) == canonical(&lev))
+            {
+                let level =
+                    Level::parse(&read(&lev)?, false).map_err(format(FileKind::Lev, &lev))?;
+                found.push((lev, level));
+            }
+        }
+        if found.is_empty() {
+            return Err(Error::MissingLevel(Some(rec.level_filename.clone())));
+        }
+        let index = found
+            .iter()
+            .position(|(_, l)| l.level_id == rec.level_id)
+            .unwrap_or(0);
+        Ok(found.swap_remove(index).1)
+    }
+
     // `level_file` is the level to play the replay on, in place of the one in lev/
     pub fn load(
         &self,
@@ -350,11 +399,12 @@ impl GameFolder {
         let level = if let Some(internal) = internal_level_file(&rec.level_filename) {
             internal_level(&self.res()?, internal)?
         } else {
-            let lev = level_file
-                .map(Path::to_path_buf)
-                .or_else(|| find_file(&self.dir.join("lev"), &rec.level_filename))
-                .ok_or_else(|| Error::MissingLevel(Some(rec.level_filename.clone())))?;
-            Level::parse(&read(&lev)?, false).map_err(format(FileKind::Lev, &lev))?
+            match level_file {
+                Some(lev) => {
+                    Level::parse(&read(lev)?, false).map_err(format(FileKind::Lev, lev))?
+                }
+                None => self.find_level(&path, &rec)?,
+            }
         };
 
         let mut warnings = Vec::new();
