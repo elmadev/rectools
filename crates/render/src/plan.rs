@@ -32,7 +32,8 @@ pub(crate) struct ViewUniform {
     texture_scale: f32,
     sky_x: f32,
     front_grass_rows: f32,
-    // 1 to snap and resize textures like the game does at each zoom
+    // 1 to tile textures from the canvas origin like the game does at each zoom, 0 to keep
+    // each tile where it is at zoom 1
     game_textures: u32,
     _pad: u32,
 }
@@ -110,24 +111,20 @@ fn view_uniform(
     let [vx, vy, vw, vh] = params.viewport;
     let ppm = M2P * params.zoom;
     let corner = view_corner(session, params, target_width);
-    let game = textures == TextureZoom::Game;
     let canvas_corner = match &scene.look {
         Look::Elma(elma) => elma.canvas_corner,
         Look::Across(_) => scene.canvas_origin,
     };
-    let (level_corner, origin, sky_x) = if game {
-        // The game snaps the canvas origin to the middle of a pixel at the current zoom
-        let quantize = |m: f64| snap_to_pixel_center(m, ppm);
-        let origin = Vec2::new(quantize(canvas_corner.x), quantize(canvas_corner.y));
-        let view_left = ((corner.x - origin.x) * ppm).floor();
-        let view_bottom = ((corner.y - origin.y) * ppm).floor();
-        let level_corner = Vec2::new(origin.x + view_left / ppm, origin.y + view_bottom / ppm);
-        (level_corner, origin, (view_left / 2.0).trunc())
-    } else {
-        // Snapped once at zoom 1, and the sky's offset in texture pixels
-        let origin = scene.canvas_origin;
-        (corner, origin, (corner.x - origin.x) * M2P / 2.0)
-    };
+    // The game snaps the canvas origin to the middle of a pixel at the current zoom and the
+    // level to whole pixels from it. Then the pixels are at the same places on the level
+    // wherever the camera is, and each shows the same texture pixel: between pixels, which
+    // texture pixels come out wider would change as the camera moves, and textures shimmer.
+    let quantize = |m: f64| snap_to_pixel_center(m, ppm);
+    let origin = Vec2::new(quantize(canvas_corner.x), quantize(canvas_corner.y));
+    let view_left = ((corner.x - origin.x) * ppm).floor();
+    let view_bottom = ((corner.y - origin.y) * ppm).floor();
+    let level_corner = Vec2::new(origin.x + view_left / ppm, origin.y + view_bottom / ppm);
+    let sky_x = (view_left / 2.0).trunc();
     let f2 = |v: Vec2| [v.x as f32, v.y as f32];
     ViewUniform {
         corner: f2(corner),
@@ -139,7 +136,7 @@ fn view_uniform(
         texture_scale: params.zoom as f32,
         sky_x: sky_x as f32,
         front_grass_rows: params.zoom.round().max(1.0) as f32,
-        game_textures: game as u32,
+        game_textures: (textures == TextureZoom::Game) as u32,
         _pad: 0,
     }
 }
@@ -612,5 +609,27 @@ mod tests {
         plan(&mut frame, &scene, &session, &views, &options, (640, 480)).unwrap();
         assert_eq!(frame.instances.len(), instances);
         assert_eq!(frame.instances.capacity(), capacity);
+    }
+
+    #[test]
+    fn the_level_is_at_whole_pixels_with_either_textures() {
+        let (scene, session) = setup(0);
+        let params = ViewParams {
+            zoom: 1.25,
+            pan: Vec2::new(0.013, -0.007),
+            ..view(0, false, false)
+        };
+        for textures in [TextureZoom::Stable, TextureZoom::Game] {
+            let u = view_uniform(&scene, &session, &params, 640, textures);
+            let pixels = |a: f32, b: f32| (a as f64 - b as f64) * u.pixels_per_meter as f64;
+            for axis in 0..2 {
+                let p = pixels(u.level_corner[axis], u.canvas_origin[axis]);
+                assert!((p - p.round()).abs() < 1e-3, "{textures:?}: {p} pixels");
+                // The camera itself is between pixels
+                let c = pixels(u.corner[axis], u.canvas_origin[axis]);
+                assert!((c - c.round()).abs() > 1e-3);
+            }
+            assert_eq!(u.sky_x, u.sky_x.trunc());
+        }
     }
 }

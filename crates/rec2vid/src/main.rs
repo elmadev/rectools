@@ -410,8 +410,8 @@ fn render(
             ..Default::default()
         },
         ghosts: GhostStyle::new(opts.translucent_ghosts),
-        // At a fixed zoom the game's texture alignment matches the original frames; when the
-        // zoom keeps changing it makes textures jump around
+        // At a fixed zoom the game's texture alignment matches the original frames at any zoom;
+        // when the zoom keeps changing it makes textures jump around
         textures: if opts.auto_zoom {
             TextureZoom::Stable
         } else {

@@ -14,7 +14,8 @@ struct View {
     sky_x: f32,
     // Rows of qgrass under a front picture that move in front of the bikes
     front_grass_rows: f32,
-    // 1 to resize and re-align textures like the game does at each zoom
+    // 1 to tile textures from the canvas origin like the game does at each zoom, 0 to keep
+    // each tile where it is at zoom 1
     game_textures: u32,
     _pad: u32,
 }
@@ -156,28 +157,63 @@ fn zoomed_texel(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, zx: f32, zy: 
     return texture_texel(rect, layer, game_size, f32(gx), f32(gy));
 }
 
-const GAME_PIXELS_PER_METER: f32 = 48.0;
+// Where tile `k` of a texture `size` pixels long starts, in pixels at this zoom
+fn tile_start(k: i32, size: i32) -> i32 {
+    return i32(floor(f32(k * size) * view.texture_scale));
+}
+
+// The tile of a texture `size` pixels long that pixel `p` is in, as its start and length
+fn locked_tile(p: i32, size: i32) -> vec2<i32> {
+    let k = i32(floor(f32(p) / (f32(size) * view.texture_scale)));
+    var start = tile_start(k, size);
+    var end = tile_start(k + 1, size);
+    // The division can be a tile off from where tile_start puts the tiles
+    if (start > p) {
+        end = start;
+        start = tile_start(k - 1, size);
+    } else if (end <= p) {
+        start = end;
+        end = tile_start(k + 2, size);
+    }
+    return vec2<i32>(start, max(end - start, 1));
+}
+
+// Like zoomed_texel, but each tile is where the texture is at zoom 1, to the nearest pixel, so
+// that textures stay on the level as the zoom changes. Each is resized to its own whole number
+// of pixels, which is the game's size and place for every tile when the zoom resizes the
+// texture to whole pixels.
+fn locked_texel(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, zx: f32, zy: f32) -> u32 {
+    if (view.texture_scale == 1.0) {
+        return texture_texel(rect, layer, game_size, zx, zy);
+    }
+    let w = i32(game_size.x);
+    let h = i32(game_size.y);
+    let column = locked_tile(i32(zx), w);
+    let row = locked_tile(i32(zy), h);
+    let x = i32(zx) - column.x;
+    let y = i32(zy) - row.x;
+    let gx = min(x * w / column.y, w - 1);
+    let gy = h - 1 - min((row.y - 1 - y) * h / row.y, h - 1);
+    return texture_texel(rect, layer, game_size, f32(gx), f32(gy));
+}
+
+fn resized_texel(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, zx: f32, zy: f32) -> u32 {
+    if (view.game_textures != 0u) {
+        return zoomed_texel(rect, layer, game_size, zx, zy);
+    }
+    return locked_texel(rect, layer, game_size, zx, zy);
+}
 
 fn world_texture(in: VertexOut) -> u32 {
-    if (view.game_textures != 0u) {
-        let p = floor((in.world - view.canvas_origin) * view.pixels_per_meter);
-        return zoomed_texel(in.texture, in.atlas_layers.y, in.texture_size, p.x, p.y);
-    }
-    // Locked to the level: the same texture pixel stays at the same place at any zoom
-    let p = floor((in.world - view.canvas_origin) * GAME_PIXELS_PER_METER);
-    return texture_texel(in.texture, in.atlas_layers.y, in.texture_size, p.x, p.y);
+    let p = floor((in.world - view.canvas_origin) * view.pixels_per_meter);
+    return resized_texel(in.texture, in.atlas_layers.y, in.texture_size, p.x, p.y);
 }
 
 fn sky_texture(in: VertexOut) -> u32 {
-    if (view.game_textures != 0u) {
-        let x = floor(in.position.x - view.offset.x);
-        let y = floor(view.offset.y + view.size.y - in.position.y);
-        // Resized and tiled like the ground, with the screen's rows rather than the level's
-        return zoomed_texel(in.texture, in.atlas_layers.y, in.texture_size, x + view.sky_x, y);
-    }
-    let x = (in.position.x - view.offset.x) / view.texture_scale;
-    let y = (view.offset.y + view.size.y - in.position.y) / view.texture_scale;
-    return texture_texel(in.texture, in.atlas_layers.y, in.texture_size, floor(x + view.sky_x), floor(y));
+    let x = floor(in.position.x - view.offset.x);
+    let y = floor(view.offset.y + view.size.y - in.position.y);
+    // Resized and tiled like the ground, with the screen's rows rather than the level's
+    return resized_texel(in.texture, in.atlas_layers.y, in.texture_size, x + view.sky_x, y);
 }
 
 // Where in its quad an affine picture is at this pixel's corner, worked out from the pixel

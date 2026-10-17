@@ -86,11 +86,13 @@ impl GhostStyle {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum TextureZoom {
-    // Textures and pictures stay put at any zoom, for zooming smoothly
+    // Textures stay on the level at any zoom, for zooming smoothly. Each tile is resized like
+    // the game does, where it is at zoom 1 to the nearest pixel, so this is the game's when the
+    // zoom resizes the textures to whole pixels, as 1.25 or 2 does a 64 pixel texture.
     #[default]
     Stable,
-    // Like the game: at each zoom the level snaps to whole pixels and textures are
-    // resized and re-aligned, which only matches it at a fixed zoom
+    // Like the game at any zoom: textures are resized to whole pixels and tiled from the corner
+    // of the level, so they move as the zoom changes, more the further from that corner
     Game,
 }
 

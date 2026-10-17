@@ -3,6 +3,7 @@
 ## Unreleased
 
 - The position slider spans the whole player, above the buttons.
+- Grass and ground no longer shimmer with auto zoom on, and stay in place while zooming.
 
 ## 0.1.8 - 2026-10-14
 

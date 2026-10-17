@@ -655,15 +655,9 @@ impl Player {
                 pictures_in_background: s.pictures_in_background,
             },
             ghosts: GhostStyle::new(s.translucent_ghosts),
-            // Like the game, the level at whole pixels with its textures sized for the zoom, so
-            // they move with it. Otherwise a zoom that isn't a whole number of pixels per
-            // texture pixel, as on a scaled screen, makes them shimmer as the camera moves.
-            // Auto zoom changes the zoom all the time, where that would make them jump.
-            textures: if self.auto_zooming() {
-                TextureZoom::Stable
-            } else {
-                TextureZoom::Game
-            },
+            // Textures stay on the level as the zoom changes, by hand or with auto zoom, rather
+            // than move as the game's would
+            textures: TextureZoom::Stable,
             // The game's pixels, which the web player makes bigger on dense screens
             hud_scale: 1,
         }
