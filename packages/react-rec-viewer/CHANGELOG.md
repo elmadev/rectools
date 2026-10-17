@@ -6,6 +6,8 @@
 - Grass and ground no longer shimmer with auto zoom on, and stay in place while zooming.
 - Each frame takes less work to draw, and a paused player does nothing until something
   changes.
+- `ghosts` given as a new array of the same replays, as `ghosts={[...]}` does on every render,
+  no longer loads the replay again.
 
 ## 0.1.8 - 2026-10-14
 

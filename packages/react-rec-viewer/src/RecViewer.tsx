@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import { Controls } from "./Controls.js";
-import { Action, ReplayInput, Viewer, buildReplay, loadEngine } from "./engine.js";
+import { Action, GhostInput, ReplayInput, Viewer, buildReplay, loadEngine } from "./engine.js";
 import { RecViewerError, toRecError } from "./errors.js";
 import { formatTime } from "./format.js";
 import { attachGestures } from "./gestures.js";
@@ -284,6 +284,12 @@ const applyLevelOptions = (viewer: Viewer, o: Required<LevelOptions>) => viewer.
 const sameOptions = (a: Required<LevelOptions>, b: Required<LevelOptions>) =>
   (Object.keys(a) as (keyof LevelOptions)[]).every((k) => a[k] === b[k]);
 
+// The same replays and shirts in the same order, though perhaps in a new array
+const sameGhosts = (a: GhostInput[] | undefined, b: GhostInput[] | undefined) =>
+  a === b ||
+  ((a?.length ?? 0) === (b?.length ?? 0) &&
+    (a ?? []).every((g, i) => g.rec === b?.[i].rec && g.shirt === b?.[i].shirt));
+
 const sameState = (a: State, b: State) =>
   (Object.keys(a) as (keyof State)[]).every((k) => k === "levelOptions" || a[k] === b[k]) &&
   sameOptions(a.levelOptions, b.levelOptions);
@@ -296,7 +302,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     res,
     acrossPack,
     shirt,
-    ghosts,
+    ghosts: givenGhosts,
     defaultZoom = 1,
     bikeLabels,
     time,
@@ -361,6 +367,10 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     picturesInBackground: props.onPicturesInBackgroundChange,
     levelOptions: props.onLevelOptionsChange,
   } as { [K in Setting | "levelOptions"]?: (value: State[K]) => void };
+  // A page's `ghosts={[...]}` is a new array each render, which would load the replay again
+  const ghostsRef = useRef(givenGhosts);
+  if (!sameGhosts(ghostsRef.current, givenGhosts)) ghostsRef.current = givenGhosts;
+  const ghosts = ghostsRef.current;
   const callbacks = useRef({ changed, props });
   callbacks.current = { changed, props };
 
