@@ -6,6 +6,7 @@
 - Grass and ground no longer shimmer with auto zoom on, and stay in place while zooming.
 - Each frame takes less work to draw, and a paused player does nothing until something
   changes.
+- Frames take less of the GPU to draw, most on high-resolution screens and when zoomed.
 - Replays and levels open faster, and so do changes to the grass, pictures, sky and fancyboost.
 - `ghosts` given as a new array of the same replays, as `ghosts={[...]}` does on every render,
   no longer loads the replay again.

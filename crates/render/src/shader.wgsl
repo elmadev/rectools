@@ -291,6 +291,26 @@ fn fs_level(in: VertexOut) -> LevelOut {
     return out;
 }
 
+// The ground, sky and minimap fills, which cover their whole quad. Without a discard, the GPU
+// can leave out the pixels the stencil rejects before shading them.
+@fragment
+fn fs_fill(in: VertexOut) -> LevelOut {
+    var out: LevelOut;
+    out.layer = in.params.w;
+    switch in.params.x {
+        case MODE_TEXTURE: {
+            out.index = world_texture(in);
+        }
+        case MODE_SKY: {
+            out.index = sky_texture(in);
+        }
+        default: {
+            out.index = in.params.z;
+        }
+    }
+    return out;
+}
+
 struct DynamicOut {
     @location(0) index: u32,
     // Clears any translucent ghost under the bike

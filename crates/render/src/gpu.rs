@@ -4,7 +4,7 @@ use crate::plan::{
     BACKGROUND_SLOT, FramePlan, HudRect, MINIMAP_BORDER_SLOT, MINIMAP_SLOT, RenderError,
     UNIFORM_SLOTS, UNIFORM_STRIDE, ViewUniform, plan,
 };
-use crate::scene::Scene;
+use crate::scene::{Look, Scene};
 use replay::Session;
 use std::num::NonZeroU64;
 
@@ -29,6 +29,7 @@ pub struct Renderer {
     with_present: wgpu::PipelineLayout,
     stencil: wgpu::RenderPipeline,
     fill: wgpu::RenderPipeline,
+    fill_masked: wgpu::RenderPipeline,
     sprite_clipped: wgpu::RenderPipeline,
     sprite_unclipped: wgpu::RenderPipeline,
     front_grass: wgpu::RenderPipeline,
@@ -436,12 +437,10 @@ impl Renderer {
             )
         });
         // The stencil reference picks ground (0) or sky (1)
-        let fill = make(level(
-            "fill",
-            "fs_level",
-            true,
-            depth_stencil(C::Always, false, C::Equal, S::Keep),
-        ));
+        let fill_depth = depth_stencil(C::Always, false, C::Equal, S::Keep);
+        let fill = make(level("fill", "fs_fill", true, fill_depth.clone()));
+        // Across's sky, whose pictures have transparent pixels
+        let fill_masked = make(level("masked fill", "fs_level", true, fill_depth));
         let sprite_clipped = make(level(
             "clipped pictures",
             "fs_level",
@@ -507,6 +506,7 @@ impl Renderer {
             with_present,
             stencil,
             fill,
+            fill_masked,
             sprite_clipped,
             sprite_unclipped,
             front_grass,
@@ -920,6 +920,9 @@ impl Renderer {
                 pass.set_stencil_reference(0);
                 pass.draw(0..6, draw.ground_fill.clone());
                 pass.set_stencil_reference(1);
+                if matches!(s.look, Look::Across(_)) {
+                    pass.set_pipeline(&self.fill_masked);
+                }
                 pass.draw(0..6, draw.sky_fill.clone());
                 if let (Some(instances), Some(p)) = (&scene.instances, s.pictures()) {
                     pass.set_vertex_buffer(0, instances.slice(..));
