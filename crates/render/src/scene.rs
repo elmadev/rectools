@@ -313,7 +313,13 @@ impl Scene {
                 if x < CANVAS_SAFETY_LEFT || x + width as i32 >= pixel_width - CANVAS_SAFETY_RIGHT {
                     continue;
                 }
-                out.push(instance.distance(distance));
+                let over_bikes = if distance < BIKE_DISTANCE {
+                    layer::OVER_BIKES
+                } else {
+                    0
+                };
+                let layer = instance.layer | over_bikes;
+                out.push(instance.distance(distance).layer(layer));
             }
         };
 
@@ -346,7 +352,7 @@ impl Scene {
         let end = instances.len() as u32;
         let front_grass = [layer::QGRASS, layer::FRONT]
             .iter()
-            .all(|&l| instances.iter().any(|i| i.layer == l));
+            .all(|&l| instances.iter().any(|i| i.layer & layer::KIND == l));
 
         let qframe = TextureRef {
             rect: atlas.add(&lgr.qframe),

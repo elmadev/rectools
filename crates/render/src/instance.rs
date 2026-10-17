@@ -25,11 +25,16 @@ pub mod snap {
     pub const PIXEL: u32 = 1;
 }
 
-// What the front grass pass needs to know about each pixel
+// What the bikes need to know about the level at each pixel: what kind of picture is in
+// front, and whether it hides them
 pub mod layer {
     pub const OTHER: u32 = 0;
     pub const FRONT: u32 = 1;
     pub const QGRASS: u32 = 2;
+    // The kind, without OVER_BIKES
+    pub const KIND: u32 = 3;
+    // Added to a picture closer than the bikes, which go behind it
+    pub const OVER_BIKES: u32 = 4;
 }
 
 pub const NO_TRANSPARENCY: u32 = 256;

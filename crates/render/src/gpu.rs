@@ -180,28 +180,17 @@ fn pipeline(
     })
 }
 
-// Depth and stencil, thrown away after the pass unless `store`
-fn depth_attachment(
-    view: &wgpu::TextureView,
-    clear: bool,
-    store: bool,
-) -> wgpu::RenderPassDepthStencilAttachment<'_> {
-    let store = if store {
-        wgpu::StoreOp::Store
-    } else {
-        wgpu::StoreOp::Discard
-    };
-    let (depth, stencil) = if clear {
-        (wgpu::LoadOp::Clear(1.0), wgpu::LoadOp::Clear(0))
-    } else {
-        (wgpu::LoadOp::Load, wgpu::LoadOp::Load)
-    };
+// Depth and stencil, which a pass only uses for itself
+fn depth_attachment(view: &wgpu::TextureView) -> wgpu::RenderPassDepthStencilAttachment<'_> {
     wgpu::RenderPassDepthStencilAttachment {
         view,
-        depth_ops: Some(wgpu::Operations { load: depth, store }),
+        depth_ops: Some(wgpu::Operations {
+            load: wgpu::LoadOp::Clear(1.0),
+            store: wgpu::StoreOp::Discard,
+        }),
         stencil_ops: Some(wgpu::Operations {
-            load: stencil,
-            store,
+            load: wgpu::LoadOp::Clear(0),
+            store: wgpu::StoreOp::Discard,
         }),
     }
 }
@@ -453,9 +442,9 @@ impl Renderer {
             depth_stencil(C::Less, true, C::Always, S::Keep),
         ));
         // Bikes and objects write the scene and clear translucent ghosts under them;
-        // translucent ghosts only go into their own layer. They read the layers, for the
-        // qgrass in front of them.
-        let bikes = |label, fs, write_index: bool, depth_write| PipelineDesc {
+        // translucent ghosts only go into their own layer. Rather than a depth test, they read
+        // the layers for where the level is in front of them.
+        let bikes = |label, fs, write_index: bool| PipelineDesc {
             label,
             layout: &with_texture,
             vs: "vs_instance",
@@ -466,12 +455,12 @@ impl Renderer {
             } else {
                 &ghosts_only
             },
-            depth: Some(depth_stencil(C::LessEqual, depth_write, C::Always, S::Keep)),
+            depth: None,
             constants: &[],
         };
-        let dynamic = make(bikes("bikes", "fs_dynamic", true, true));
+        let dynamic = make(bikes("bikes", "fs_dynamic", true));
         let ghost =
-            translucent_ghosts.then(|| make(bikes("translucent ghosts", "fs_ghost", false, false)));
+            translucent_ghosts.then(|| make(bikes("translucent ghosts", "fs_ghost", false)));
         let timer = make(PipelineDesc {
             label: "timer",
             layout: &with_texture,
@@ -742,7 +731,19 @@ impl Renderer {
             GHOST_FORMAT,
             U::RENDER_ATTACHMENT | U::TEXTURE_BINDING,
         );
-        let depth = self.texture("depth", size, DEPTH_FORMAT, U::RENDER_ATTACHMENT);
+        // Each pass clears it and throws it away, so a tiled GPU can keep it in its tiles only.
+        // Browsers can reject that usage, which is newer than WebGPU.
+        let transient = if cfg!(target_arch = "wasm32") {
+            U::empty()
+        } else {
+            U::TRANSIENT_ATTACHMENT
+        };
+        let depth = self.texture(
+            "depth",
+            size,
+            DEPTH_FORMAT,
+            U::RENDER_ATTACHMENT | transient,
+        );
         let copy = self.texture(
             "index copy",
             size,
@@ -852,8 +853,6 @@ impl Renderer {
         let present = self.present_pipeline(output.format);
         let draws = &self.frame.views;
         let background = self.frame.background;
-        // With pictures in the background, the bikes go over everything
-        let on_top = options.dynamic.pictures_in_background;
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
         let set_view = |pass: &mut wgpu::RenderPass, slot: usize, [x, y, w, h]: [u32; 4]| {
@@ -885,10 +884,10 @@ impl Renderer {
                 timestamp_writes: timestamps("level"),
                 color_attachments: &[
                     color(&targets.index_view, clear),
-                    // Only read by the bikes, for the qgrass in front of them
-                    color_stored(&targets.layer_view, clear, self.frame.front_grass),
+                    // Read by the bikes, for where the level is in front of them
+                    color(&targets.layer_view, clear),
                 ],
-                depth_stencil_attachment: Some(depth_attachment(&targets.depth_view, true, true)),
+                depth_stencil_attachment: Some(depth_attachment(&targets.depth_view)),
                 ..Default::default()
             });
             set_view(
@@ -940,11 +939,6 @@ impl Renderer {
                     // Only read by the present pass when there are translucent ghosts
                     color_stored(&targets.ghost_view, clear, self.frame.translucent_ghosts),
                 ],
-                depth_stencil_attachment: Some(depth_attachment(
-                    &targets.depth_view,
-                    on_top,
-                    false,
-                )),
                 ..Default::default()
             });
             let ghost = match (options.ghosts, &self.ghost) {
@@ -975,7 +969,7 @@ impl Renderer {
                     color(&targets.index_view, wgpu::LoadOp::Load),
                     color_stored(&targets.layer_view, clear, false),
                 ],
-                depth_stencil_attachment: Some(depth_attachment(&targets.depth_view, true, false)),
+                depth_stencil_attachment: Some(depth_attachment(&targets.depth_view)),
                 ..Default::default()
             });
             for (i, draw) in draws.iter().enumerate() {

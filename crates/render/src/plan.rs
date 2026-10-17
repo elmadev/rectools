@@ -39,6 +39,10 @@ pub(crate) struct ViewUniform {
     // In the background slot, which the present pass reads: 1 when the frame draws translucent
     // ghosts into their own layer, which is otherwise left out
     translucent_ghosts: u32,
+    // 1 when the bikes go over everything, pictures in the background
+    bikes_on_top: u32,
+    // To the size of the shader's struct, a multiple of its vec2s
+    _padding: u32,
 }
 
 // A rectangle of the timer or the info panel's text, in view pixels from the bottom left: the
@@ -106,8 +110,6 @@ pub struct FramePlan {
     // The instance of the frame behind the views, None when they cover the target
     pub(crate) background: Option<u32>,
     pub(crate) translucent_ghosts: bool,
-    // Qgrass under front pictures goes in front of the bikes, which read the layers for it
-    pub(crate) front_grass: bool,
 }
 
 fn view_uniform(
@@ -115,7 +117,7 @@ fn view_uniform(
     session: &Session,
     params: &ViewParams,
     target_width: u32,
-    textures: TextureZoom,
+    options: &RenderOptions,
     front_grass: bool,
 ) -> ViewUniform {
     let [vx, vy, vw, vh] = params.viewport;
@@ -150,8 +152,9 @@ fn view_uniform(
         } else {
             0.0
         },
-        game_textures: (textures == TextureZoom::Game) as u32,
-        translucent_ghosts: 0,
+        game_textures: (options.textures == TextureZoom::Game) as u32,
+        bikes_on_top: options.dynamic.pictures_in_background as u32,
+        ..Default::default()
     }
 }
 
@@ -246,7 +249,7 @@ pub fn plan(
     let front_grass =
         !options.dynamic.pictures_in_background && scene.pictures().is_some_and(|p| p.front_grass);
     for (i, params) in views.iter().enumerate() {
-        let u = view_uniform(scene, session, params, width, options.textures, front_grass);
+        let u = view_uniform(scene, session, params, width, options, front_grass);
         write_uniform(i, &u);
 
         // Ground and sky cover the whole view, a meter beyond each edge
@@ -436,7 +439,6 @@ pub fn plan(
         scratch.len() as u32 - 1
     });
     frame.translucent_ghosts = translucent_ghosts;
-    frame.front_grass = front_grass;
     frame.timer_copy = timer_copy_bounds(&frame.timer, views, &frame.views, (width, height));
     Ok(())
 }
@@ -758,7 +760,8 @@ mod tests {
         };
         let scene = Scene::new(&graphics, &level, &[], &options, 4096).unwrap();
         let pictures = scene.pictures().unwrap();
-        assert!(pictures.instances.iter().any(|i| i.layer == layer::FRONT));
+        let front = layer::FRONT | layer::OVER_BIKES;
+        assert!(pictures.instances.iter().any(|i| i.layer == front));
         assert!(!pictures.front_grass);
     }
 
@@ -796,7 +799,11 @@ mod tests {
             ..view(0, false, false)
         };
         for textures in [TextureZoom::Stable, TextureZoom::Game] {
-            let u = view_uniform(&scene, &session, &params, 640, textures, false);
+            let options = RenderOptions {
+                textures,
+                ..Default::default()
+            };
+            let u = view_uniform(&scene, &session, &params, 640, &options, false);
             let pixels = |a: f32, b: f32| (a as f64 - b as f64) * u.pixels_per_meter as f64;
             for axis in 0..2 {
                 let p = pixels(u.level_corner[axis], u.canvas_origin[axis]);

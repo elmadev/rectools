@@ -21,6 +21,8 @@ struct View {
     // In the background slot, which the present pass reads: 1 when the frame draws translucent
     // ghosts into their own layer, which is otherwise left out
     translucent_ghosts: u32,
+    // 1 when the bikes go over everything, pictures in the background
+    bikes_on_top: u32,
 }
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -337,7 +339,7 @@ struct DynamicOut {
 
 @fragment
 fn fs_dynamic(in: VertexOut) -> DynamicOut {
-    if (behind_front_grass(in.position)) {
+    if (behind_level(in.position)) {
         discard;
     }
     return DynamicOut(shade_dynamic(in), 0u);
@@ -346,7 +348,7 @@ fn fs_dynamic(in: VertexOut) -> DynamicOut {
 // A translucent ghost goes into its own layer as palette index + 1
 @fragment
 fn fs_ghost(in: VertexOut) -> DynamicOut {
-    if (behind_front_grass(in.position)) {
+    if (behind_level(in.position)) {
         discard;
     }
     return DynamicOut(0u, shade_dynamic(in) + 1u);
@@ -387,18 +389,24 @@ fn vs_fullscreen(@builtin(vertex_index) vertex: u32) -> FullscreenOut {
 
 const LAYER_FRONT: u32 = 1u;
 const LAYER_QGRASS: u32 = 2u;
+const LAYER_KIND: u32 = 3u;
+const LAYER_OVER_BIKES: u32 = 4u;
 
-// Whether the bikes go behind the level at this pixel, for being qgrass right under a front
-// picture. The game puts that qgrass in front of anything further than 223 away, which the
-// bikes and objects all are. Never when the frame has no qgrass and front pictures, whose
-// layers aren't kept then.
-fn behind_front_grass(position: vec4<f32>) -> bool {
-    let rows = i32(view.front_grass_rows);
-    if (rows == 0) {
+// Whether the bikes go behind the level at this pixel. The bikes and objects are all at the
+// same distance, so rather than a depth test, the level's layers say where a picture is
+// closer. And qgrass right under a front picture goes in front of anything further than 223
+// away, which they all are.
+fn behind_level(position: vec4<f32>) -> bool {
+    if (view.bikes_on_top != 0u) {
         return false;
     }
     let p = vec2<i32>(floor(position.xy));
-    if (textureLoad(layers, p, 0).r != LAYER_QGRASS) {
+    let l = textureLoad(layers, p, 0).r;
+    if ((l & LAYER_OVER_BIKES) != 0u) {
+        return true;
+    }
+    let rows = i32(view.front_grass_rows);
+    if (rows == 0 || l != LAYER_QGRASS) {
         return false;
     }
     let top = i32(view.offset.y);
@@ -407,7 +415,7 @@ fn behind_front_grass(position: vec4<f32>) -> bool {
         if (above.y < top) {
             break;
         }
-        let l = textureLoad(layers, above, 0).r;
+        let l = textureLoad(layers, above, 0).r & LAYER_KIND;
         if (l == LAYER_FRONT) {
             return true;
         }
