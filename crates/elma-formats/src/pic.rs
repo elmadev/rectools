@@ -79,15 +79,28 @@ impl Pic8 {
         }
         let scale = target_height as f64 / self.height as f64;
         let target_width = ((self.width as f64 * scale) as i64).max(1) as usize;
-        let mut out = Pic8::new(target_width, target_height);
+        // The column each one comes from is the same on every row, and a row that comes from
+        // the same one as the row above is a copy of it, as the game copies it
+        let columns: Vec<usize> = (0..target_width)
+            .map(|x| ((x as f64 / scale) as usize).min(self.width - 1))
+            .collect();
+        let mut pixels = Vec::with_capacity(target_width * target_height);
+        let mut previous = None;
         for y in 0..target_height {
             let sy = ((y as f64 / scale) as usize).min(self.height - 1);
-            for x in 0..target_width {
-                let sx = ((x as f64 / scale) as usize).min(self.width - 1);
-                out.set(x, y, self.get(sx, sy));
+            if previous == Some(sy) {
+                pixels.extend_from_within(pixels.len() - target_width..);
+            } else {
+                let row = self.row(sy);
+                pixels.extend(columns.iter().map(|&sx| row[sx]));
+                previous = Some(sy);
             }
         }
-        out
+        Pic8 {
+            width: target_width,
+            height: target_height,
+            pixels,
+        }
     }
 
     // Width the game gives this picture after resizing it to `target_height`
@@ -351,6 +364,39 @@ mod tests {
         let data = pcx(32768, 32768, &[0xff, 0]);
         // Right after the header
         assert_eq!(decode_pcx(&data), Err(Error::Eof { at: 128 }));
+    }
+
+    #[test]
+    fn resizes_like_the_game_pixel_by_pixel() {
+        // The game's pic8::resize, a pixel at a time
+        let reference = |pic: &Pic8, target_height: usize| {
+            let scale = target_height as f64 / pic.height as f64;
+            let target_width = ((pic.width as f64 * scale) as i64).max(1) as usize;
+            let mut out = Pic8::new(target_width, target_height);
+            for y in 0..target_height {
+                let sy = ((y as f64 / scale) as usize).min(pic.height - 1);
+                for x in 0..target_width {
+                    let sx = ((x as f64 / scale) as usize).min(pic.width - 1);
+                    out.set(x, y, pic.get(sx, sy));
+                }
+            }
+            out
+        };
+        for (w, h) in [(1, 1), (3, 7), (64, 64), (280, 31), (37, 50)] {
+            let mut pic = Pic8::new(w, h);
+            for (i, p) in pic.pixels.iter_mut().enumerate() {
+                *p = (i * 31 % 251) as u8;
+            }
+            for target in [1, 2, h / 2 + 1, h + 1, h * 3 / 2, h * 5 / 4 + 3, h * 3] {
+                if target != h {
+                    assert_eq!(
+                        pic.resized(target as i32),
+                        reference(&pic, target),
+                        "{w}x{h} to {target}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
