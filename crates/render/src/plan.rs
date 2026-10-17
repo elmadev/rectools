@@ -5,7 +5,7 @@
 use crate::camera::{self, view_corner};
 use crate::hud::{PixelRect, last_apple_rects, timer_rects};
 use crate::instance::{Instance, M2P, mode, snap_to_pixel_center};
-use crate::options::{CameraMode, RenderOptions, TextureZoom, ViewParams};
+use crate::options::{CameraMode, GhostStyle, RenderOptions, TextureZoom, ViewParams};
 use crate::scene::{Look, Scene, TextureRef, dynamic_instances};
 use bytemuck::{Pod, Zeroable};
 use replay::{Session, TIME_TO_CENTISECONDS, Vec2};
@@ -35,7 +35,9 @@ pub(crate) struct ViewUniform {
     // 1 to tile textures from the canvas origin like the game does at each zoom, 0 to keep
     // each tile where it is at zoom 1
     game_textures: u32,
-    _pad: u32,
+    // In the background slot, which the present pass reads: 1 when the frame draws translucent
+    // ghosts into their own layer, which is otherwise left out
+    translucent_ghosts: u32,
 }
 
 // A rectangle of the timer or the info panel's text, in view pixels from the bottom left: the
@@ -102,6 +104,7 @@ pub struct FramePlan {
     pub(crate) views: Vec<ViewDraw>,
     // The instance of the frame behind the views
     pub(crate) background: u32,
+    pub(crate) translucent_ghosts: bool,
 }
 
 fn view_uniform(
@@ -140,7 +143,7 @@ fn view_uniform(
         sky_x: sky_x as f32,
         front_grass_rows: params.zoom.round().max(1.0) as f32,
         game_textures: (textures == TextureZoom::Game) as u32,
-        _pad: 0,
+        translucent_ghosts: 0,
     }
 }
 
@@ -370,6 +373,8 @@ pub fn plan(
         });
     }
 
+    let translucent_ghosts =
+        options.ghosts == GhostStyle::Translucent && draws.iter().any(|d| !d.ghosts.is_empty());
     // The game tiles qframe.pcx behind the views, flipped like everything it draws
     write_uniform(
         BACKGROUND_SLOT,
@@ -379,6 +384,7 @@ pub fn plan(
             texture_scale: 1.0,
             front_grass_rows: 1.0,
             game_textures: 1,
+            translucent_ghosts: translucent_ghosts as u32,
             ..Default::default()
         },
     );
@@ -391,6 +397,7 @@ pub fn plan(
     );
 
     frame.background = background;
+    frame.translucent_ghosts = translucent_ghosts;
     frame.timer_copy = timer_copy_bounds(&frame.timer, views, &frame.views, (width, height));
     Ok(())
 }
@@ -600,6 +607,28 @@ mod tests {
                 assert!(top >= y as f32 && top + rh <= (y + h) as f32, "{r:?}");
             }
         }
+    }
+
+    #[test]
+    fn the_ghost_layer_is_kept_only_for_translucent_ghosts() {
+        let kept = |ghosts: usize, style: GhostStyle| {
+            let (scene, session) = setup(ghosts);
+            let mut frame = FramePlan::default();
+            let options = RenderOptions {
+                ghosts: style,
+                ..Default::default()
+            };
+            let views = [view(0, false, false)];
+            plan(&mut frame, &scene, &session, &views, &options, (640, 480)).unwrap();
+            let at = BACKGROUND_SLOT * UNIFORM_STRIDE as usize;
+            let u: &ViewUniform =
+                bytemuck::from_bytes(&frame.uniforms[at..at + std::mem::size_of::<ViewUniform>()]);
+            assert_eq!(u.translucent_ghosts, frame.translucent_ghosts as u32);
+            frame.translucent_ghosts
+        };
+        assert!(kept(1, GhostStyle::Translucent));
+        assert!(!kept(0, GhostStyle::Translucent));
+        assert!(!kept(1, GhostStyle::Normal));
     }
 
     #[test]

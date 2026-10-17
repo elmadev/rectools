@@ -197,13 +197,26 @@ fn color(
     view: &wgpu::TextureView,
     load: wgpu::LoadOp<wgpu::Color>,
 ) -> Option<wgpu::RenderPassColorAttachment<'_>> {
+    color_stored(view, load, true)
+}
+
+// A color attachment that is thrown away after the pass unless `store`
+fn color_stored(
+    view: &wgpu::TextureView,
+    load: wgpu::LoadOp<wgpu::Color>,
+    store: bool,
+) -> Option<wgpu::RenderPassColorAttachment<'_>> {
     Some(wgpu::RenderPassColorAttachment {
         view,
         depth_slice: None,
         resolve_target: None,
         ops: wgpu::Operations {
             load,
-            store: wgpu::StoreOp::Store,
+            store: if store {
+                wgpu::StoreOp::Store
+            } else {
+                wgpu::StoreOp::Discard
+            },
         },
     })
 }
@@ -855,7 +868,8 @@ impl Renderer {
                 label: Some("bikes"),
                 color_attachments: &[
                     color(&targets.index_view, wgpu::LoadOp::Load),
-                    color(&targets.ghost_view, clear),
+                    // Only read by the present pass when there are translucent ghosts
+                    color_stored(&targets.ghost_view, clear, self.frame.translucent_ghosts),
                 ],
                 depth_stencil_attachment: Some(depth_attachment(&targets.depth_view, on_top)),
                 ..Default::default()
@@ -954,7 +968,12 @@ impl Renderer {
                 ..Default::default()
             });
             pass.set_pipeline(&self.presents[present].1);
-            pass.set_bind_group(0, &scene.bind_group, &[0]);
+            // The background slot, which says whether there are translucent ghosts
+            pass.set_bind_group(
+                0,
+                &scene.bind_group,
+                &[(BACKGROUND_SLOT as u64 * UNIFORM_STRIDE) as u32],
+            );
             pass.set_bind_group(1, &targets.present_group, &[]);
             pass.draw(0..3, 0..1);
         }

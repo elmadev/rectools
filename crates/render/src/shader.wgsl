@@ -17,7 +17,9 @@ struct View {
     // 1 to tile textures from the canvas origin like the game does at each zoom, 0 to keep
     // each tile where it is at zoom 1
     game_textures: u32,
-    _pad: u32,
+    // In the background slot, which the present pass reads: 1 when the frame draws translucent
+    // ghosts into their own layer, which is otherwise left out
+    translucent_ghosts: u32,
 }
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -429,8 +431,11 @@ fn fs_present(in: FullscreenOut) -> @location(0) vec4<f32> {
     let p = vec2<i32>(floor(in.position.xy));
     let c = textureLoad(indices, p, 0).r;
     var color = textureLoad(palette, vec2<i32>(i32(c), 0), 0).rgb;
-    // Only translucent ghosts leave anything in this layer
-    let g = textureLoad(ghosts, p, 0).r;
+    // Only translucent ghosts leave anything in this layer, which isn't kept without them
+    var g = 0u;
+    if (view.translucent_ghosts != 0u) {
+        g = textureLoad(ghosts, p, 0).r;
+    }
     if (g != 0u) {
         let ghost = textureLoad(palette, vec2<i32>(i32(g - 1u), 0), 0).rgb;
         // Keep the ghost's shading, in the tint's color
