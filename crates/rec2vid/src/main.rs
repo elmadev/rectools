@@ -31,6 +31,7 @@ struct Options {
     camera: CameraMode,
     timer: bool,
     minimap: bool,
+    last_apple_time: bool,
     pause_end: bool,
     pictures_in_background: bool,
     still_objects: bool,
@@ -67,6 +68,7 @@ Options:
   --camera <mode>     classic or centered (default: classic)
   --no-timer          hide the timer
   --minimap           show the minimap
+  --last-apple-time   show the game's last apple time in the bottom right (not for Across)
   --pause-end         hold the last frame for one second
   --pictures-in-background
                       draw the bikes over every picture
@@ -105,6 +107,7 @@ fn parse_arguments() -> Result<Options, String> {
         camera: CameraMode::Classic,
         timer: true,
         minimap: false,
+        last_apple_time: false,
         pause_end: false,
         pictures_in_background: false,
         still_objects: false,
@@ -181,6 +184,7 @@ fn parse_arguments() -> Result<Options, String> {
             }
             "--no-timer" => opts.timer = false,
             "--minimap" => opts.minimap = true,
+            "--last-apple-time" => opts.last_apple_time = true,
             "--pause-end" => opts.pause_end = true,
             "--pictures-in-background" => opts.pictures_in_background = true,
             "--still-objects" => opts.still_objects = true,
@@ -401,7 +405,7 @@ fn render(
         minimap: opts.minimap,
         best_time,
         center: None,
-        last_apple_time: false,
+        last_apple_time: opts.last_apple_time,
     };
     let render_options = RenderOptions {
         dynamic: DynamicOptions {
