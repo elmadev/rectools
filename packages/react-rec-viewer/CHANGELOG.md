@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-10-17
 
 - The position slider spans the whole player, above the buttons.
 - Grass and ground no longer shimmer with auto zoom on, and stay in place while zooming.
