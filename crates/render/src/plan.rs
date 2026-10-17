@@ -31,6 +31,7 @@ pub(crate) struct ViewUniform {
     pixels_per_meter: f32,
     texture_scale: f32,
     sky_x: f32,
+    // 0 when the frame has no qgrass and front pictures
     front_grass_rows: f32,
     // 1 to tile textures from the canvas origin like the game does at each zoom, 0 to keep
     // each tile where it is at zoom 1
@@ -105,6 +106,8 @@ pub struct FramePlan {
     // The instance of the frame behind the views, None when they cover the target
     pub(crate) background: Option<u32>,
     pub(crate) translucent_ghosts: bool,
+    // Qgrass under front pictures goes in front of the bikes, which read the layers for it
+    pub(crate) front_grass: bool,
 }
 
 fn view_uniform(
@@ -113,6 +116,7 @@ fn view_uniform(
     params: &ViewParams,
     target_width: u32,
     textures: TextureZoom,
+    front_grass: bool,
 ) -> ViewUniform {
     let [vx, vy, vw, vh] = params.viewport;
     let ppm = M2P * params.zoom;
@@ -141,7 +145,11 @@ fn view_uniform(
         pixels_per_meter: ppm as f32,
         texture_scale: params.zoom as f32,
         sky_x: sky_x as f32,
-        front_grass_rows: params.zoom.round().max(1.0) as f32,
+        front_grass_rows: if front_grass {
+            params.zoom.round().max(1.0) as f32
+        } else {
+            0.0
+        },
         game_textures: (textures == TextureZoom::Game) as u32,
         translucent_ghosts: 0,
     }
@@ -234,8 +242,11 @@ pub fn plan(
     timer_data.clear();
     let scratch = &mut frame.instances;
     scratch.clear();
+    // With pictures in the background, the bikes go over everything
+    let front_grass =
+        !options.dynamic.pictures_in_background && scene.pictures().is_some_and(|p| p.front_grass);
     for (i, params) in views.iter().enumerate() {
-        let u = view_uniform(scene, session, params, width, options.textures);
+        let u = view_uniform(scene, session, params, width, options.textures, front_grass);
         write_uniform(i, &u);
 
         // Ground and sky cover the whole view, a meter beyond each edge
@@ -357,7 +368,6 @@ pub fn plan(
                         offset: [rect[0] as f32, rect[1] as f32],
                         pixels_per_meter: p.pixels_per_meter as f32,
                         texture_scale: 1.0,
-                        front_grass_rows: 1.0,
                         ..Default::default()
                     }
                 };
@@ -411,7 +421,6 @@ pub fn plan(
             size: [width as f32, height as f32],
             pixels_per_meter: 1.0,
             texture_scale: 1.0,
-            front_grass_rows: 1.0,
             game_textures: 1,
             translucent_ghosts: translucent_ghosts as u32,
             ..Default::default()
@@ -427,6 +436,7 @@ pub fn plan(
         scratch.len() as u32 - 1
     });
     frame.translucent_ghosts = translucent_ghosts;
+    frame.front_grass = front_grass;
     frame.timer_copy = timer_copy_bounds(&frame.timer, views, &frame.views, (width, height));
     Ok(())
 }
@@ -786,7 +796,7 @@ mod tests {
             ..view(0, false, false)
         };
         for textures in [TextureZoom::Stable, TextureZoom::Game] {
-            let u = view_uniform(&scene, &session, &params, 640, textures);
+            let u = view_uniform(&scene, &session, &params, 640, textures, false);
             let pixels = |a: f32, b: f32| (a as f64 - b as f64) * u.pixels_per_meter as f64;
             for axis in 0..2 {
                 let p = pixels(u.level_corner[axis], u.canvas_origin[axis]);

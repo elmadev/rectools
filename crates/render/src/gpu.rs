@@ -32,7 +32,6 @@ pub struct Renderer {
     fill_masked: wgpu::RenderPipeline,
     sprite_clipped: wgpu::RenderPipeline,
     sprite_unclipped: wgpu::RenderPipeline,
-    front_grass: wgpu::RenderPipeline,
     dynamic: wgpu::RenderPipeline,
     ghost: Option<wgpu::RenderPipeline>,
     timer: wgpu::RenderPipeline,
@@ -453,21 +452,12 @@ impl Renderer {
             true,
             depth_stencil(C::Less, true, C::Always, S::Keep),
         ));
-        let front_grass = make(PipelineDesc {
-            label: "front grass",
-            layout: &with_texture,
-            vs: "vs_fullscreen",
-            buffers: &[],
-            fs: "fs_front_grass",
-            targets: &[],
-            depth: Some(depth_stencil(C::Always, true, C::Always, S::Keep)),
-            constants: &[],
-        });
         // Bikes and objects write the scene and clear translucent ghosts under them;
-        // translucent ghosts only go into their own layer
+        // translucent ghosts only go into their own layer. They read the layers, for the
+        // qgrass in front of them.
         let bikes = |label, fs, write_index: bool, depth_write| PipelineDesc {
             label,
-            layout: &scene_only,
+            layout: &with_texture,
             vs: "vs_instance",
             buffers: instances,
             fs,
@@ -509,7 +499,6 @@ impl Renderer {
             fill_masked,
             sprite_clipped,
             sprite_unclipped,
-            front_grass,
             dynamic,
             ghost,
             timer,
@@ -865,7 +854,6 @@ impl Renderer {
         let background = self.frame.background;
         // With pictures in the background, the bikes go over everything
         let on_top = options.dynamic.pictures_in_background;
-        let front_grass = !on_top && s.pictures().is_some_and(|p| p.front_grass);
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
         let set_view = |pass: &mut wgpu::RenderPass, slot: usize, [x, y, w, h]: [u32; 4]| {
@@ -897,8 +885,8 @@ impl Renderer {
                 timestamp_writes: timestamps("level"),
                 color_attachments: &[
                     color(&targets.index_view, clear),
-                    // Only read by the front grass pass
-                    color_stored(&targets.layer_view, clear, front_grass),
+                    // Only read by the bikes, for the qgrass in front of them
+                    color_stored(&targets.layer_view, clear, self.frame.front_grass),
                 ],
                 depth_stencil_attachment: Some(depth_attachment(&targets.depth_view, true, true)),
                 ..Default::default()
@@ -943,21 +931,6 @@ impl Renderer {
             }
         }
 
-        if front_grass {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("front grass"),
-                timestamp_writes: timestamps("front grass"),
-                depth_stencil_attachment: Some(depth_attachment(&targets.depth_view, false, true)),
-                ..Default::default()
-            });
-            pass.set_pipeline(&self.front_grass);
-            pass.set_bind_group(1, &targets.layers_group, &[]);
-            for (i, params) in views.iter().enumerate() {
-                set_view(&mut pass, i, params.viewport);
-                pass.draw(0..3, 0..1);
-            }
-        }
-
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("bikes"),
@@ -979,6 +952,7 @@ impl Renderer {
                 _ => &self.dynamic,
             };
             pass.set_vertex_buffer(0, self.dynamic_buffer.slice(..));
+            pass.set_bind_group(1, &targets.layers_group, &[]);
             for (i, (params, draw)) in views.iter().zip(draws).enumerate() {
                 set_view(&mut pass, i, params.viewport);
                 // Objects, then ghosts, then the replay's own bikes

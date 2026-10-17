@@ -12,7 +12,8 @@ struct View {
     texture_scale: f32,
     // Horizontal sky offset in screen pixels
     sky_x: f32,
-    // Rows of qgrass under a front picture that move in front of the bikes
+    // Rows of qgrass under a front picture that move in front of the bikes, 0 when the frame
+    // has no qgrass and front pictures
     front_grass_rows: f32,
     // 1 to tile textures from the canvas origin like the game does at each zoom, 0 to keep
     // each tile where it is at zoom 1
@@ -336,12 +337,18 @@ struct DynamicOut {
 
 @fragment
 fn fs_dynamic(in: VertexOut) -> DynamicOut {
+    if (behind_front_grass(in.position)) {
+        discard;
+    }
     return DynamicOut(shade_dynamic(in), 0u);
 }
 
 // A translucent ghost goes into its own layer as palette index + 1
 @fragment
 fn fs_ghost(in: VertexOut) -> DynamicOut {
+    if (behind_front_grass(in.position)) {
+        discard;
+    }
     return DynamicOut(0u, shade_dynamic(in) + 1u);
 }
 
@@ -380,16 +387,21 @@ fn vs_fullscreen(@builtin(vertex_index) vertex: u32) -> FullscreenOut {
 
 const LAYER_FRONT: u32 = 1u;
 const LAYER_QGRASS: u32 = 2u;
-const FRONT_GRASS_DEPTH: f32 = 223.0 / 2048.0;
 
-@fragment
-fn fs_front_grass(in: FullscreenOut) -> @builtin(frag_depth) f32 {
-    let p = vec2<i32>(floor(in.position.xy));
+// Whether the bikes go behind the level at this pixel, for being qgrass right under a front
+// picture. The game puts that qgrass in front of anything further than 223 away, which the
+// bikes and objects all are. Never when the frame has no qgrass and front pictures, whose
+// layers aren't kept then.
+fn behind_front_grass(position: vec4<f32>) -> bool {
+    let rows = i32(view.front_grass_rows);
+    if (rows == 0) {
+        return false;
+    }
+    let p = vec2<i32>(floor(position.xy));
     if (textureLoad(layers, p, 0).r != LAYER_QGRASS) {
-        discard;
+        return false;
     }
     let top = i32(view.offset.y);
-    let rows = i32(view.front_grass_rows);
     for (var k = 1; k <= rows; k++) {
         let above = p - vec2<i32>(0, k);
         if (above.y < top) {
@@ -397,14 +409,13 @@ fn fs_front_grass(in: FullscreenOut) -> @builtin(frag_depth) f32 {
         }
         let l = textureLoad(layers, above, 0).r;
         if (l == LAYER_FRONT) {
-            return FRONT_GRASS_DEPTH;
+            return true;
         }
         if (l != LAYER_QGRASS) {
             break;
         }
     }
-    discard;
-    return 1.0;
+    return false;
 }
 
 // Timer and text: a timer pixel is mapped to the brightest or darkest color, text is drawn
