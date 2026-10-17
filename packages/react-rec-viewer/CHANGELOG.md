@@ -4,7 +4,8 @@
 
 - The position slider spans the whole player, above the buttons.
 - Grass and ground no longer shimmer with auto zoom on, and stay in place while zooming.
-- Each frame takes less work to draw.
+- Each frame takes less work to draw, and a paused player does nothing until something
+  changes.
 
 ## 0.1.8 - 2026-10-14
 

@@ -284,6 +284,10 @@ const applyLevelOptions = (viewer: Viewer, o: Required<LevelOptions>) => viewer.
 const sameOptions = (a: Required<LevelOptions>, b: Required<LevelOptions>) =>
   (Object.keys(a) as (keyof LevelOptions)[]).every((k) => a[k] === b[k]);
 
+const sameState = (a: State, b: State) =>
+  (Object.keys(a) as (keyof State)[]).every((k) => k === "levelOptions" || a[k] === b[k]) &&
+  sameOptions(a.levelOptions, b.levelOptions);
+
 export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function RecViewer(props, ref) {
   const {
     rec,
@@ -373,6 +377,12 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
   const viewerRef = useRef<Viewer | null>(null);
   // Something changed that a paused player has to draw
   const dirty = useRef(true);
+  // Starts the render loop again, which stops while there is nothing to draw
+  const wakeLoop = useRef<() => void>(() => {});
+  const invalidate = useCallback(() => {
+    dirty.current = true;
+    wakeLoop.current();
+  }, []);
   // Scrolled into view, so worth drawing
   const onScreen = useRef(true);
 
@@ -394,8 +404,10 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     if (!viewer) return;
     const next = readState(viewer);
     const prev = stateRef.current;
+    invalidate();
+    // A pan or a zoom by the wheel changes nothing shown outside the canvas
+    if (prev && sameState(next, prev)) return;
     stateRef.current = next;
-    dirty.current = true;
     setState(next);
     if (!prev) return;
     const on = callbacks.current.changed;
@@ -403,7 +415,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
       if (next[key] !== prev[key]) (on[key] as ((v: unknown) => void) | undefined)?.(next[key]);
     }
     if (!sameOptions(next.levelOptions, prev.levelOptions)) on.levelOptions?.(next.levelOptions);
-  }, []);
+  }, [invalidate]);
 
   // Runs `change` on the core, then reports it
   const change = useCallback(
@@ -450,10 +462,10 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     }
     const viewer = viewerRef.current;
     viewer?.resize(w, h, dpr());
-    dirty.current = true;
+    invalidate();
     // A new size clears the canvas, which would show blank until the next frame draws it
     if (resized && viewer?.hasContent()) viewer.render();
-  }, []);
+  }, [invalidate]);
 
   // Create the GPU viewer once per canvas, with the settings as the props start them
   useEffect(() => {
@@ -568,11 +580,11 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     if (!canvas || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(([entry]) => {
       onScreen.current = entry.isIntersecting;
-      dirty.current = true;
+      invalidate();
     });
     observer.observe(canvas);
     return () => observer.disconnect();
-  }, []);
+  }, [invalidate]);
 
   // Keep the canvas at device resolution
   useEffect(() => {
@@ -596,21 +608,24 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
 
   // The render loop. Draws every frame while playing, otherwise only after a change, and never
   // while out of sight, though playing time goes on. Objects move with the replay's time, so
-  // they are still while paused.
+  // they are still while paused, and then the loop stops until something changes.
   useEffect(() => {
     if (!loaded) return;
     let frame = 0;
     let last = performance.now();
     let reported = -1;
+    let shownTime = "";
     const tick = (now: number) => {
-      frame = requestAnimationFrame(tick);
+      frame = 0;
       const viewer = viewerRef.current;
       const s = stateRef.current;
       if (!viewer || !s) return;
-      const dt = Math.min(0.25, (now - last) / 1000);
+      // A frame's time can be from before the loop was woken
+      const dt = Math.min(0.25, Math.max(0, now - last) / 1000);
       last = now;
       const draw = dirty.current || (onScreen.current && s.playing);
       if (!draw && !s.playing) return;
+      frame = requestAnimationFrame(tick);
       dirty.current = false;
       // The core plays the replay, and pauses at the end before looping
       const ended = viewer.tick(dt);
@@ -620,13 +635,25 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
       const t = viewer.time();
       if (t !== reported) {
         reported = t;
-        if (timeRef.current) timeRef.current.textContent = formatTime(t);
+        const text = formatTime(t);
+        if (timeRef.current && text !== shownTime) {
+          shownTime = text;
+          timeRef.current.textContent = text;
+        }
         if (scrubRef.current && !scrubbing.current) scrubRef.current.value = String(t);
         callbacks.current.props.onTimeChange?.(t);
       }
     };
+    wakeLoop.current = () => {
+      if (frame) return;
+      last = performance.now();
+      frame = requestAnimationFrame(tick);
+    };
     frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      wakeLoop.current = () => {};
+    };
   }, [loaded, sync]);
 
   // Dragging pans, the wheel and pinching zoom, a tap plays or pauses
