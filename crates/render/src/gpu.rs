@@ -1,8 +1,8 @@
 use crate::instance::Instance;
 use crate::options::{GhostStyle, RenderOptions, ViewParams};
 use crate::plan::{
-    BACKGROUND_SLOT, FramePlan, HudRect, MINIMAP_BORDER_SLOT, MINIMAP_SLOT, RenderError, UNIFORM_SLOTS,
-    UNIFORM_STRIDE, ViewUniform, plan,
+    BACKGROUND_SLOT, FramePlan, HudRect, MINIMAP_BORDER_SLOT, MINIMAP_SLOT, RenderError,
+    UNIFORM_SLOTS, UNIFORM_STRIDE, ViewUniform, plan,
 };
 use crate::scene::Scene;
 use replay::Session;

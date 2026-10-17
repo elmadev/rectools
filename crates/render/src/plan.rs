@@ -166,7 +166,12 @@ fn timer_copy_bounds(
             // From the view's bottom left to the target's top left
             let (left, top) = (vx + x, vy + vh - (y + h));
             let b = bounds.get_or_insert([left, top, left + w, top + h]);
-            *b = [b[0].min(left), b[1].min(top), b[2].max(left + w), b[3].max(top + h)];
+            *b = [
+                b[0].min(left),
+                b[1].min(top),
+                b[2].max(left + w),
+                b[3].max(top + h),
+            ];
         }
     }
     let [left, top, right, bottom] = bounds?;
@@ -589,7 +594,10 @@ mod tests {
     #[test]
     fn only_the_timers_are_copied_for_the_timer_pass() {
         let (scene, session) = setup(0);
-        assert_eq!(planned(&scene, &session, &[view(0, false, false)]).timer_copy, None);
+        assert_eq!(
+            planned(&scene, &session, &[view(0, false, false)]).timer_copy,
+            None
+        );
         let mut top = view(0, true, false);
         top.viewport = [0, 0, 640, 240];
         let mut bottom = top;

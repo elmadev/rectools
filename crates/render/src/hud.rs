@@ -279,7 +279,14 @@ pub(crate) fn last_apple_rects(
     let label_offset = 180 + (value.len() as i32 - 10).max(0) * 6;
     let y = 10;
     let mut out = Vec::new();
-    write(font, &format!("last apple ({apples})"), width - label_offset, y, scale, &mut out);
+    write(
+        font,
+        &format!("last apple ({apples})"),
+        width - label_offset,
+        y,
+        scale,
+        &mut out,
+    );
     let value_x = width - 10 - text_width(font, &value);
     write(font, &value, value_x, y, scale, &mut out);
     out
@@ -306,7 +313,10 @@ mod tests {
         let right = rects.iter().map(|r| r.rect.x + r.rect.width).max().unwrap();
         // Glyphs can start and end with an empty column
         assert!((640 - 180..640 - 177).contains(&left), "{left}");
-        assert!((640 - 14..=640 - 10 - SMALL_SPACING).contains(&right), "{right}");
+        assert!(
+            (640 - 14..=640 - 10 - SMALL_SPACING).contains(&right),
+            "{right}"
+        );
         assert!(rects.iter().all(|r| r.rect.y >= 10 && r.rect.y < 10 + 14));
         // Twice the scale is the same row on twice the pixels
         let big = last_apple_rects(1280, 3, 2297, 2);
@@ -343,7 +353,11 @@ mod tests {
         for (a, b) in thin.iter().zip(&thick) {
             assert!(b.x <= a.x && b.y <= a.y, "{a:?} {b:?}");
             assert!(b.x + b.width >= a.x + a.width && b.y + b.height >= a.y + a.height);
-            assert_eq!(a.width.min(a.height) * 3, b.width.min(b.height), "{a:?} {b:?}");
+            assert_eq!(
+                a.width.min(a.height) * 3,
+                b.width.min(b.height),
+                "{a:?} {b:?}"
+            );
         }
     }
 }

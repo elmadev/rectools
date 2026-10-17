@@ -1,8 +1,8 @@
 // An .abc font, as the game writes its text with (elma-classic's abc8): a sprite for each
 // character it has, in the colors of the palette it is drawn with
+use crate::Error;
 use crate::pic::Pic8;
 use crate::reader::Reader;
-use crate::Error;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Glyph {
@@ -109,7 +109,11 @@ mod tests {
         let w = g.pic.width;
         (0..g.pic.height)
             .rev()
-            .map(|y| (0..w).map(|x| if g.solid[y * w + x] { '#' } else { '.' }).collect())
+            .map(|y| {
+                (0..w)
+                    .map(|x| if g.solid[y * w + x] { '#' } else { '.' })
+                    .collect()
+            })
             .collect()
     }
 
