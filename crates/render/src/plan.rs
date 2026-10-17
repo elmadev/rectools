@@ -102,8 +102,8 @@ pub struct FramePlan {
     // height from the top left: only it is copied for the timer pass to read
     pub(crate) timer_copy: Option<[u32; 4]>,
     pub(crate) views: Vec<ViewDraw>,
-    // The instance of the frame behind the views
-    pub(crate) background: u32,
+    // The instance of the frame behind the views, None when they cover the target
+    pub(crate) background: Option<u32>,
     pub(crate) translucent_ghosts: bool,
 }
 
@@ -179,6 +179,30 @@ fn timer_copy_bounds(
     let (x0, y0) = (clamp(left.floor(), width), clamp(top.floor(), height));
     let (x1, y1) = (clamp(right.ceil(), width), clamp(bottom.ceil(), height));
     (x1 > x0 && y1 > y0).then_some([x0, y0, x1 - x0, y1 - y0])
+}
+
+// Whether `views` cover every pixel of the target. Their edges cut it into cells that are
+// each inside a view or outside them all.
+fn covers(views: &[ViewParams], (width, height): (u32, u32)) -> bool {
+    let mut xs = vec![0, width];
+    let mut ys = vec![0, height];
+    for v in views {
+        let [x, y, w, h] = v.viewport;
+        xs.extend([x.min(width), (x + w).min(width)]);
+        ys.extend([y.min(height), (y + h).min(height)]);
+    }
+    for edges in [&mut xs, &mut ys] {
+        edges.sort_unstable();
+        edges.dedup();
+    }
+    let inside = |x: u32, y: u32| {
+        views.iter().any(|v| {
+            let [vx, vy, vw, vh] = v.viewport;
+            (vx..vx + vw).contains(&x) && (vy..vy + vh).contains(&y)
+        })
+    };
+    xs.windows(2)
+        .all(|x| ys.windows(2).all(|y| inside(x[0], y[0])))
 }
 
 // Works out a frame of `views` of `scene` into `frame`, whose buffers are reused
@@ -393,15 +417,15 @@ pub fn plan(
             ..Default::default()
         },
     );
-    let background = scratch.len() as u32;
-    let (w, h) = (width as f64, height as f64);
-    scratch.push(
-        Instance::new([0.0, h], [w, 0.0], [0.0, -h])
-            .texture(scene.qframe.rect, scene.qframe.size)
-            .mode(mode::SKY),
-    );
-
-    frame.background = background;
+    frame.background = (!covers(views, (width, height))).then(|| {
+        let (w, h) = (width as f64, height as f64);
+        scratch.push(
+            Instance::new([0.0, h], [w, 0.0], [0.0, -h])
+                .texture(scene.qframe.rect, scene.qframe.size)
+                .mode(mode::SKY),
+        );
+        scratch.len() as u32 - 1
+    });
     frame.translucent_ghosts = translucent_ghosts;
     frame.timer_copy = timer_copy_bounds(&frame.timer, views, &frame.views, (width, height));
     Ok(())
@@ -506,8 +530,32 @@ mod tests {
             frame.uniforms.len(),
             (UNIFORM_STRIDE * UNIFORM_SLOTS) as usize
         );
-        // The frame behind the views comes last
-        assert_eq!(frame.background as usize, frame.instances.len() - 1);
+        // One view covers the target, so the frame behind it isn't drawn
+        assert_eq!(frame.background, None);
+    }
+
+    #[test]
+    fn the_frame_behind_the_views_is_drawn_where_they_leave_gaps() {
+        let (scene, session) = setup(0);
+        let mut left = view(0, false, false);
+        left.viewport = [0, 0, 320, 480];
+        let mut right = left;
+        right.viewport = [320, 0, 320, 480];
+        assert_eq!(planned(&scene, &session, &[left, right]).background, None);
+        // A column between them
+        right.viewport = [330, 0, 310, 480];
+        let frame = planned(&scene, &session, &[left, right]);
+        assert_eq!(frame.background, Some(frame.instances.len() as u32 - 1));
+        // Overlapping views that leave out a corner
+        let mut big = view(0, false, false);
+        big.viewport = [0, 0, 640, 240];
+        let mut small = big;
+        small.viewport = [0, 120, 320, 360];
+        assert!(
+            planned(&scene, &session, &[big, small])
+                .background
+                .is_some()
+        );
     }
 
     #[test]
@@ -677,6 +725,31 @@ mod tests {
         };
         assert_eq!(pictures(true), 1);
         assert_eq!(pictures(false), 0);
+    }
+
+    #[test]
+    fn a_picture_in_front_needs_qgrass_for_front_grass() {
+        use crate::instance::layer;
+        use elma_formats::lev::{Clipping, Sprite};
+        let mut level = level();
+        level.sprites.push(Sprite {
+            picture: "zz000000".into(),
+            texture: String::new(),
+            mask: String::new(),
+            r: LevVec2 { x: 20.0, y: 5.0 },
+            distance: 400,
+            clipping: Some(Clipping::Unclipped),
+        });
+        // The stub LGR has no qgrass
+        let graphics = Graphics::Elma(Box::new(Lgr::stub()));
+        let options = SceneOptions {
+            fancyboost: true,
+            ..SceneOptions::default()
+        };
+        let scene = Scene::new(&graphics, &level, &[], &options, 4096).unwrap();
+        let pictures = scene.pictures().unwrap();
+        assert!(pictures.instances.iter().any(|i| i.layer == layer::FRONT));
+        assert!(!pictures.front_grass);
     }
 
     #[test]

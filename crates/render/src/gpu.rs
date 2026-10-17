@@ -181,28 +181,28 @@ fn pipeline(
     })
 }
 
+// Depth and stencil, thrown away after the pass unless `store`
 fn depth_attachment(
     view: &wgpu::TextureView,
     clear: bool,
+    store: bool,
 ) -> wgpu::RenderPassDepthStencilAttachment<'_> {
-    let ops = |clear_value| wgpu::Operations {
-        load: if clear {
-            wgpu::LoadOp::Clear(clear_value)
-        } else {
-            wgpu::LoadOp::Load
-        },
-        store: wgpu::StoreOp::Store,
+    let store = if store {
+        wgpu::StoreOp::Store
+    } else {
+        wgpu::StoreOp::Discard
+    };
+    let (depth, stencil) = if clear {
+        (wgpu::LoadOp::Clear(1.0), wgpu::LoadOp::Clear(0))
+    } else {
+        (wgpu::LoadOp::Load, wgpu::LoadOp::Load)
     };
     wgpu::RenderPassDepthStencilAttachment {
         view,
-        depth_ops: Some(ops(1.0)),
+        depth_ops: Some(wgpu::Operations { load: depth, store }),
         stencil_ops: Some(wgpu::Operations {
-            load: if clear {
-                wgpu::LoadOp::Clear(0)
-            } else {
-                wgpu::LoadOp::Load
-            },
-            store: wgpu::StoreOp::Store,
+            load: stencil,
+            store,
         }),
     }
 }
@@ -863,6 +863,9 @@ impl Renderer {
         let present = self.present_pipeline(output.format);
         let draws = &self.frame.views;
         let background = self.frame.background;
+        // With pictures in the background, the bikes go over everything
+        let on_top = options.dynamic.pictures_in_background;
+        let front_grass = !on_top && s.pictures().is_some_and(|p| p.front_grass);
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
         let set_view = |pass: &mut wgpu::RenderPass, slot: usize, [x, y, w, h]: [u32; 4]| {
@@ -894,9 +897,10 @@ impl Renderer {
                 timestamp_writes: timestamps("level"),
                 color_attachments: &[
                     color(&targets.index_view, clear),
-                    color(&targets.layer_view, clear),
+                    // Only read by the front grass pass
+                    color_stored(&targets.layer_view, clear, front_grass),
                 ],
-                depth_stencil_attachment: Some(depth_attachment(&targets.depth_view, true)),
+                depth_stencil_attachment: Some(depth_attachment(&targets.depth_view, true, true)),
                 ..Default::default()
             });
             set_view(
@@ -905,9 +909,11 @@ impl Renderer {
                 [0, 0, targets.width, targets.height],
             );
             pass.set_vertex_buffer(0, self.dynamic_buffer.slice(..));
-            pass.set_pipeline(&self.fill);
-            pass.set_stencil_reference(0);
-            pass.draw(0..6, background..background + 1);
+            if let Some(background) = background {
+                pass.set_pipeline(&self.fill);
+                pass.set_stencil_reference(0);
+                pass.draw(0..6, background..background + 1);
+            }
             for (i, (params, draw)) in views.iter().zip(draws).enumerate() {
                 set_view(&mut pass, i, params.viewport);
                 if let Some(polygons) = &scene.polygons {
@@ -937,13 +943,11 @@ impl Renderer {
             }
         }
 
-        // With pictures in the background, the bikes go over everything
-        let on_top = options.dynamic.pictures_in_background;
-        if !on_top {
+        if front_grass {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("front grass"),
                 timestamp_writes: timestamps("front grass"),
-                depth_stencil_attachment: Some(depth_attachment(&targets.depth_view, false)),
+                depth_stencil_attachment: Some(depth_attachment(&targets.depth_view, false, true)),
                 ..Default::default()
             });
             pass.set_pipeline(&self.front_grass);
@@ -963,7 +967,11 @@ impl Renderer {
                     // Only read by the present pass when there are translucent ghosts
                     color_stored(&targets.ghost_view, clear, self.frame.translucent_ghosts),
                 ],
-                depth_stencil_attachment: Some(depth_attachment(&targets.depth_view, on_top)),
+                depth_stencil_attachment: Some(depth_attachment(
+                    &targets.depth_view,
+                    on_top,
+                    false,
+                )),
                 ..Default::default()
             });
             let ghost = match (options.ghosts, &self.ghost) {
@@ -984,15 +992,16 @@ impl Renderer {
         }
 
         if draws.iter().any(|d| d.minimap.is_some()) {
-            // Its own stencil and depth: the level and bikes are done with theirs
+            // Its own stencil and depth: the level and bikes are done with theirs, and with the
+            // layers, which its pipelines write but nothing reads
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("minimap"),
                 timestamp_writes: timestamps("minimap"),
                 color_attachments: &[
                     color(&targets.index_view, wgpu::LoadOp::Load),
-                    color(&targets.layer_view, wgpu::LoadOp::Load),
+                    color_stored(&targets.layer_view, clear, false),
                 ],
-                depth_stencil_attachment: Some(depth_attachment(&targets.depth_view, true)),
+                depth_stencil_attachment: Some(depth_attachment(&targets.depth_view, true, false)),
                 ..Default::default()
             });
             for (i, draw) in draws.iter().enumerate() {

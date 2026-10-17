@@ -110,6 +110,8 @@ pub struct Pictures {
     pub ground: Range<u32>,
     pub sky: Range<u32>,
     pub unclipped: Range<u32>,
+    // Qgrass can move in front of the bikes: there is qgrass and a picture in front
+    pub front_grass: bool,
 }
 
 impl Scene {
@@ -342,6 +344,9 @@ impl Scene {
             sprite_instances(Clipping::Unclipped, &mut instances);
         }
         let end = instances.len() as u32;
+        let front_grass = [layer::QGRASS, layer::FRONT]
+            .iter()
+            .all(|&l| instances.iter().any(|i| i.layer == l));
 
         let qframe = TextureRef {
             rect: atlas.add(&lgr.qframe),
@@ -372,6 +377,7 @@ impl Scene {
                     ground: ground_start..sky_start,
                     sky: sky_start..unclipped_start,
                     unclipped: unclipped_start..end,
+                    front_grass,
                 },
                 canvas_corner,
             })),
