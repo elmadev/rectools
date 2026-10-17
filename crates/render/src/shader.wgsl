@@ -426,10 +426,51 @@ fn behind_level(position: vec4<f32>) -> bool {
     return false;
 }
 
-// Timer and text: a timer pixel is mapped to the brightest or darkest color, text is drawn
-// in its own color
+// Palette lookup into the output
 
-@group(1) @binding(0) var scene_copy: texture_2d<u32>;
+@group(1) @binding(0) var indices: texture_2d<u32>;
+@group(1) @binding(1) var ghosts: texture_2d<u32>;
+
+// Set for sRGB outputs, which expect linear colors
+override linearize: bool = false;
+// Color and opacity of translucent ghosts
+const GHOST_TINT = vec4<f32>(0.35, 0.6, 1.0, 0.55);
+
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    let low = c / 12.92;
+    let high = pow((c + 0.055) / 1.055, vec3<f32>(2.4));
+    return select(high, low, c <= vec3<f32>(0.04045));
+}
+
+// Palette color `c` at pixel `p`, under any translucent ghost there
+fn present_color(c: u32, p: vec2<i32>) -> vec4<f32> {
+    var color = textureLoad(palette, vec2<i32>(i32(c), 0), 0).rgb;
+    // Only translucent ghosts leave anything in this layer, which isn't kept without them
+    var g = 0u;
+    if (view.translucent_ghosts != 0u) {
+        g = textureLoad(ghosts, p, 0).r;
+    }
+    if (g != 0u) {
+        let ghost = textureLoad(palette, vec2<i32>(i32(g - 1u), 0), 0).rgb;
+        // Keep the ghost's shading, in the tint's color
+        let shade = dot(ghost, vec3<f32>(0.299, 0.587, 0.114));
+        let tinted = GHOST_TINT.rgb * (0.35 + 0.9 * shade);
+        color = mix(color, tinted, GHOST_TINT.a);
+    }
+    if (linearize) {
+        color = srgb_to_linear(color);
+    }
+    return vec4<f32>(color, 1.0);
+}
+
+@fragment
+fn fs_present(in: FullscreenOut) -> @location(0) vec4<f32> {
+    let p = vec2<i32>(floor(in.position.xy));
+    return present_color(textureLoad(indices, p, 0).r, p);
+}
+
+// Timer and text, drawn over the frame as it goes to the output: a timer pixel is mapped to
+// the brightest or darkest color, text is drawn in its own color
 
 // HudRect's color for the timer
 const TIMER_COLOR: u32 = 0xffffffffu;
@@ -449,7 +490,7 @@ fn vs_timer(
         vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 0.0), vec2<f32>(0.0, 1.0),
         vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 0.0), vec2<f32>(1.0, 1.0),
     );
-    // rect is x, y, width, height in view pixels from the bottom left
+    // rect is x, y, width, height in target pixels from the bottom left
     let pixels = rect.xy + corners[vertex] * rect.zw;
     var out: HudOut;
     out.position = vec4<f32>(pixels / view.size * 2.0 - vec2<f32>(1.0, 1.0), 0.0, 1.0);
@@ -458,49 +499,11 @@ fn vs_timer(
 }
 
 @fragment
-fn fs_timer(in: HudOut) -> @location(0) u32 {
-    if in.color != TIMER_COLOR {
-        return in.color;
-    }
-    let c = textureLoad(scene_copy, vec2<i32>(floor(in.position.xy)), 0).r;
-    return textureLoad(timer_map, vec2<i32>(i32(c), 0), 0).r;
-}
-
-// Palette lookup into the output
-
-@group(1) @binding(0) var indices: texture_2d<u32>;
-@group(1) @binding(1) var ghosts: texture_2d<u32>;
-
-// Set for sRGB outputs, which expect linear colors
-override linearize: bool = false;
-// Color and opacity of translucent ghosts
-const GHOST_TINT = vec4<f32>(0.35, 0.6, 1.0, 0.55);
-
-fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
-    let low = c / 12.92;
-    let high = pow((c + 0.055) / 1.055, vec3<f32>(2.4));
-    return select(high, low, c <= vec3<f32>(0.04045));
-}
-
-@fragment
-fn fs_present(in: FullscreenOut) -> @location(0) vec4<f32> {
+fn fs_present_timer(in: HudOut) -> @location(0) vec4<f32> {
     let p = vec2<i32>(floor(in.position.xy));
-    let c = textureLoad(indices, p, 0).r;
-    var color = textureLoad(palette, vec2<i32>(i32(c), 0), 0).rgb;
-    // Only translucent ghosts leave anything in this layer, which isn't kept without them
-    var g = 0u;
-    if (view.translucent_ghosts != 0u) {
-        g = textureLoad(ghosts, p, 0).r;
+    var c = in.color;
+    if (c == TIMER_COLOR) {
+        c = textureLoad(timer_map, vec2<i32>(i32(textureLoad(indices, p, 0).r), 0), 0).r;
     }
-    if (g != 0u) {
-        let ghost = textureLoad(palette, vec2<i32>(i32(g - 1u), 0), 0).rgb;
-        // Keep the ghost's shading, in the tint's color
-        let shade = dot(ghost, vec3<f32>(0.299, 0.587, 0.114));
-        let tinted = GHOST_TINT.rgb * (0.35 + 0.9 * shade);
-        color = mix(color, tinted, GHOST_TINT.a);
-    }
-    if (linearize) {
-        color = srgb_to_linear(color);
-    }
-    return vec4<f32>(color, 1.0);
+    return present_color(c, p);
 }

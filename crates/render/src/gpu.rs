@@ -34,8 +34,7 @@ pub struct Renderer {
     sprite_unclipped: wgpu::RenderPipeline,
     dynamic: wgpu::RenderPipeline,
     ghost: Option<wgpu::RenderPipeline>,
-    timer: wgpu::RenderPipeline,
-    presents: Vec<(wgpu::TextureFormat, wgpu::RenderPipeline)>,
+    presents: Vec<Present>,
     dynamic_buffer: wgpu::Buffer,
     timer_buffer: wgpu::Buffer,
     frame: FramePlan,
@@ -54,6 +53,13 @@ struct PassTiming {
     passes: Vec<&'static str>,
 }
 
+// What goes to an output of one format: the frame, then the timer and text over it
+struct Present {
+    format: wgpu::TextureFormat,
+    frame: wgpu::RenderPipeline,
+    timer: wgpu::RenderPipeline,
+}
+
 pub struct GpuScene {
     pub scene: Scene,
     bind_group: wgpu::BindGroup,
@@ -65,14 +71,11 @@ pub struct GpuScene {
 pub struct Targets {
     pub width: u32,
     pub height: u32,
-    index: wgpu::Texture,
     index_view: wgpu::TextureView,
     layer_view: wgpu::TextureView,
     ghost_view: wgpu::TextureView,
     depth_view: wgpu::TextureView,
-    copy: wgpu::Texture,
     layers_group: wgpu::BindGroup,
-    timer_group: wgpu::BindGroup,
     present_group: wgpu::BindGroup,
 }
 
@@ -391,11 +394,6 @@ impl Renderer {
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &wgpu::vertex_attr_array![0 => Float32x2],
         })];
-        let rects = &[Some(wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<HudRect>() as u64,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x4, 1 => Uint32],
-        })];
 
         use wgpu::CompareFunction as C;
         use wgpu::StencilOperation as S;
@@ -461,16 +459,6 @@ impl Renderer {
         let dynamic = make(bikes("bikes", "fs_dynamic", true));
         let ghost =
             translucent_ghosts.then(|| make(bikes("translucent ghosts", "fs_ghost", false)));
-        let timer = make(PipelineDesc {
-            label: "timer",
-            layout: &with_texture,
-            vs: "vs_timer",
-            buffers: rects,
-            fs: "fs_timer",
-            targets: &[target(INDEX_FORMAT, true)],
-            depth: None,
-            constants: &[],
-        });
 
         Renderer {
             dynamic_buffer: vertex_buffer(&device, "dynamic instances", 64 * 1024),
@@ -490,7 +478,6 @@ impl Renderer {
             sprite_unclipped,
             dynamic,
             ghost,
-            timer,
             presents: Vec::new(),
             frame: FramePlan::default(),
             timing: None,
@@ -717,7 +704,7 @@ impl Renderer {
             "index",
             size,
             INDEX_FORMAT,
-            U::RENDER_ATTACHMENT | U::TEXTURE_BINDING | U::COPY_SRC,
+            U::RENDER_ATTACHMENT | U::TEXTURE_BINDING,
         );
         let layer = self.texture(
             "layer",
@@ -744,12 +731,6 @@ impl Renderer {
             DEPTH_FORMAT,
             U::RENDER_ATTACHMENT | transient,
         );
-        let copy = self.texture(
-            "index copy",
-            size,
-            INDEX_FORMAT,
-            U::TEXTURE_BINDING | U::COPY_DST,
-        );
         let view = |t: &wgpu::Texture| t.create_view(&Default::default());
         let (index_view, layer_view, ghost_view) = (view(&index), view(&layer), view(&ghost));
         let group = |label, layout, entries: &[wgpu::BindGroupEntry]| {
@@ -767,11 +748,6 @@ impl Renderer {
                 &self.texture_layout,
                 &[texture_binding(0, &layer_view)],
             ),
-            timer_group: group(
-                "timer",
-                &self.texture_layout,
-                &[texture_binding(0, &view(&copy))],
-            ),
             present_group: group(
                 "present",
                 &self.present_layout,
@@ -780,34 +756,43 @@ impl Renderer {
                     texture_binding(1, &ghost_view),
                 ],
             ),
-            index,
             index_view,
             layer_view,
             ghost_view,
             depth_view: view(&depth),
-            copy,
         }
     }
 
     fn present_pipeline(&mut self, format: wgpu::TextureFormat) -> usize {
-        if let Some(i) = self.presents.iter().position(|(f, _)| *f == format) {
+        if let Some(i) = self.presents.iter().position(|p| p.format == format) {
             return i;
         }
-        let pipeline = pipeline(
-            &self.device,
-            &self.shader,
-            PipelineDesc {
-                label: "present",
-                layout: &self.with_present,
-                vs: "vs_fullscreen",
-                buffers: &[],
-                fs: "fs_present",
-                targets: &[target(format, true)],
-                depth: None,
-                constants: &[("linearize", format.is_srgb() as u32 as f64)],
-            },
-        );
-        self.presents.push((format, pipeline));
+        let rects = &[Some(wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<HudRect>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &wgpu::vertex_attr_array![0 => Float32x4, 1 => Uint32],
+        })];
+        let make = |label, vs, buffers, fs| {
+            pipeline(
+                &self.device,
+                &self.shader,
+                PipelineDesc {
+                    label,
+                    layout: &self.with_present,
+                    vs,
+                    buffers,
+                    fs,
+                    targets: &[target(format, true)],
+                    depth: None,
+                    constants: &[("linearize", format.is_srgb() as u32 as f64)],
+                },
+            )
+        };
+        self.presents.push(Present {
+            format,
+            frame: make("present", "vs_fullscreen", &[], "fs_present"),
+            timer: make("timer", "vs_timer", rects, "fs_present_timer"),
+        });
         self.presents.len() - 1
     }
 
@@ -998,40 +983,6 @@ impl Renderer {
             }
         }
 
-        if draws.iter().any(|d| !d.timer.is_empty()) {
-            if let Some([x, y, width, height]) = self.frame.timer_copy {
-                let origin = wgpu::Origin3d { x, y, z: 0 };
-                encoder.copy_texture_to_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        origin,
-                        ..targets.index.as_image_copy()
-                    },
-                    wgpu::TexelCopyTextureInfo {
-                        origin,
-                        ..targets.copy.as_image_copy()
-                    },
-                    wgpu::Extent3d {
-                        width,
-                        height,
-                        depth_or_array_layers: 1,
-                    },
-                );
-            }
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("timer"),
-                timestamp_writes: timestamps("timer"),
-                color_attachments: &[color(&targets.index_view, wgpu::LoadOp::Load)],
-                ..Default::default()
-            });
-            pass.set_pipeline(&self.timer);
-            pass.set_bind_group(1, &targets.timer_group, &[]);
-            pass.set_vertex_buffer(0, self.timer_buffer.slice(..));
-            for (i, (params, draw)) in views.iter().zip(draws).enumerate() {
-                set_view(&mut pass, i, params.viewport);
-                pass.draw(0..6, draw.timer.clone());
-            }
-        }
-
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("present"),
@@ -1039,8 +990,10 @@ impl Renderer {
                 color_attachments: &[color(output.view, wgpu::LoadOp::Clear(wgpu::Color::BLACK))],
                 ..Default::default()
             });
-            pass.set_pipeline(&self.presents[present].1);
-            // The background slot, which says whether there are translucent ghosts
+            let present = &self.presents[present];
+            pass.set_pipeline(&present.frame);
+            // The background slot, which says whether there are translucent ghosts, and is
+            // the size of the target for the timer's rects
             pass.set_bind_group(
                 0,
                 &scene.bind_group,
@@ -1048,6 +1001,15 @@ impl Renderer {
             );
             pass.set_bind_group(1, &targets.present_group, &[]);
             pass.draw(0..3, 0..1);
+            if draws.iter().any(|d| !d.timer.is_empty()) {
+                pass.set_pipeline(&present.timer);
+                pass.set_vertex_buffer(0, self.timer_buffer.slice(..));
+                for (params, draw) in views.iter().zip(draws) {
+                    let [x, y, w, h] = params.viewport;
+                    pass.set_scissor_rect(x, y, w, h);
+                    pass.draw(0..6, draw.timer.clone());
+                }
+            }
         }
 
         if let Some(t) = &mut self.timing {
