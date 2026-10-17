@@ -136,8 +136,25 @@ fn texture_texel(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, gx: f32, gy:
     return atlas_texel(rect, layer, sx, sy);
 }
 
+// texture_texel for a game pixel inside the texture, which needs no wrapping
+fn texture_texel_inside(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, gx: i32, gy: i32) -> u32 {
+    let size = rect.zw;
+    let sx = min(u32(f32(gx) * f32(size.x) / game_size.x), size.x - 1u);
+    let sy = min(u32(f32(gy) * f32(size.y) / game_size.y), size.y - 1u);
+    return atlas_texel(rect, layer, sx, sy);
+}
+
+// a / b rounded down, for b > 0. GPUs have no integer division, and working it out takes
+// longer than all the rest of a texture pixel, while the float division can be one off. So
+// the float quotient is corrected by the remainder.
+fn div_floor(a: i32, b: i32) -> i32 {
+    let q = i32(floor(f32(a) / f32(b)));
+    let r = a - q * b;
+    return q + select(0, -1, r < 0) + select(0, 1, r >= b);
+}
+
 fn positive_mod_i(a: i32, n: i32) -> i32 {
-    return ((a % n) + n) % n;
+    return a - n * div_floor(a, n);
 }
 
 // The game resizes textures for the zoom (before flipping them) and tiles the result. Maps a
@@ -151,12 +168,12 @@ fn zoomed_texel(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, zx: f32, zy: 
     let w = i32(game_size.x);
     let h = i32(game_size.y);
     let height = max(i32(floor(game_size.y * view.texture_scale)), 1);
-    let width = max(w * height / h, 1);
+    let width = max(div_floor(w * height, h), 1);
     let x = positive_mod_i(i32(zx), width);
     let y = positive_mod_i(i32(zy), height);
-    let gx = min(x * h / height, w - 1);
-    let gy = h - 1 - min((height - 1 - y) * h / height, h - 1);
-    return texture_texel(rect, layer, game_size, f32(gx), f32(gy));
+    let gx = min(div_floor(x * h, height), w - 1);
+    let gy = h - 1 - min(div_floor((height - 1 - y) * h, height), h - 1);
+    return texture_texel_inside(rect, layer, game_size, gx, gy);
 }
 
 // Where tile `k` of a texture `size` pixels long starts, in pixels at this zoom
@@ -194,9 +211,9 @@ fn locked_texel(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, zx: f32, zy: 
     let row = locked_tile(i32(zy), h);
     let x = i32(zx) - column.x;
     let y = i32(zy) - row.x;
-    let gx = min(x * w / column.y, w - 1);
-    let gy = h - 1 - min((row.y - 1 - y) * h / row.y, h - 1);
-    return texture_texel(rect, layer, game_size, f32(gx), f32(gy));
+    let gx = min(div_floor(x * w, column.y), w - 1);
+    let gy = h - 1 - min(div_floor((row.y - 1 - y) * h, row.y), h - 1);
+    return texture_texel_inside(rect, layer, game_size, gx, gy);
 }
 
 fn resized_texel(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, zx: f32, zy: f32) -> u32 {
