@@ -53,16 +53,15 @@ struct InstanceIn {
     @location(5) image: vec4<u32>,
     @location(6) texture: vec4<u32>,
     @location(7) texture_size: vec2<f32>,
-    @location(8) mode: u32,
-    @location(9) transparency: u32,
-    @location(10) color: u32,
-    @location(11) layer: u32,
+    // The mode, transparency, color and layer, as one attribute: WebGL2 has only 16, and
+    // Firefox on Mesa counts the vertex index as one of them
+    @location(8) params: vec4<u32>,
     // image | texture << 8
-    @location(12) atlas_layers: u32,
+    @location(9) atlas_layers: u32,
     // Where the game puts it on the canvas, see CanvasRect
-    @location(13) rect: vec4<i32>,
-    @location(14) rounding: f32,
-    @location(15) orientation: u32,
+    @location(10) rect: vec4<i32>,
+    @location(11) rounding: f32,
+    @location(12) orientation: u32,
 }
 
 struct VertexOut {
@@ -128,7 +127,7 @@ fn vs_instance(@builtin(vertex_index) vertex: u32, instance: InstanceIn) -> Vert
     out.image = instance.image;
     out.texture = instance.texture;
     out.texture_size = instance.texture_size;
-    out.params = vec4<u32>(instance.mode, instance.transparency, instance.color, instance.layer);
+    out.params = instance.params;
     out.atlas_layers = vec2<u32>(instance.atlas_layers & 0xffu, instance.atlas_layers >> 8u);
     out.quad_origin = (instance.origin - view.corner) * view.pixels_per_meter;
     out.quad_u = instance.axis_u * view.pixels_per_meter;

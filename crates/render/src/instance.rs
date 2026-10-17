@@ -61,6 +61,7 @@ pub struct Instance {
     pub texture: [u32; 4],
     // Size of `texture` in game pixels, which can differ from its stored size
     pub texture_size: [f32; 2],
+    // The shader reads these four as one vec4, so they stay together and in this order
     pub mode: u32,
     pub transparency: u32,
     pub color: u32,
@@ -240,6 +241,17 @@ pub const BIKE_DISTANCE: f64 = 500.0;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // WebGL2 can have as few as 16 vertex attributes, and Firefox on Mesa counts the vertex
+    // index the instances are drawn with as one of them
+    #[test]
+    fn instances_fit_webgl2s_vertex_attributes() {
+        let shader = include_str!("shader.wgsl");
+        let start = shader.find("struct InstanceIn {").unwrap();
+        let end = start + shader[start..].find('}').unwrap();
+        let attributes = shader[start..end].matches("@location(").count();
+        assert!(attributes < 16, "{attributes} instance attributes");
+    }
 
     // The shader's resize_source, which resize_rounding is for
     fn resize_source(i: i32, height: i32, resized: i32, rounding: f32) -> i32 {

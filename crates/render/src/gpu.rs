@@ -387,17 +387,17 @@ impl Renderer {
             Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<Instance>() as u64,
                 step_mode: wgpu::VertexStepMode::Instance,
+                // The mode, transparency, color and layer are read as one Uint32x4
                 attributes: &wgpu::vertex_attr_array![
                     0 => Float32x2, 1 => Float32x2, 2 => Float32x2, 3 => Float32, 4 => Uint32,
-                    5 => Uint32x4, 6 => Uint32x4, 7 => Float32x2, 8 => Uint32, 9 => Uint32,
-                    10 => Uint32, 11 => Uint32, 12 => Uint32
+                    5 => Uint32x4, 6 => Uint32x4, 7 => Float32x2, 8 => Uint32x4, 9 => Uint32
                 ],
             }),
             Some(wgpu::VertexBufferLayout {
                 // Where the game puts each, beside the instances
                 array_stride: std::mem::size_of::<CanvasRect>() as u64,
                 step_mode: wgpu::VertexStepMode::Instance,
-                attributes: &wgpu::vertex_attr_array![13 => Sint32x4, 14 => Float32, 15 => Uint32],
+                attributes: &wgpu::vertex_attr_array![10 => Sint32x4, 11 => Float32, 12 => Uint32],
             }),
         ];
         let polygons = &[Some(wgpu::VertexBufferLayout {

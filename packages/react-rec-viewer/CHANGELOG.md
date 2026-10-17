@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Fixed a black screen in Firefox on Linux, which 0.2.0 brought: its WebGL2 has too few
+  vertex attributes for the shader.
+
 ## 0.2.0 - 2026-10-17
 
 - The position slider spans the whole player, above the buttons.
