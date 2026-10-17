@@ -142,7 +142,11 @@ fn view_uniform(
         size: [vw as f32, vh as f32],
         offset: [vx as f32, vy as f32],
         pixels_per_meter: ppm as f32,
-        texture_scale: params.zoom as f32,
+        texture_scale: if options.zoom_textures {
+            params.zoom as f32
+        } else {
+            1.0
+        },
         sky_x: sky_x as f32,
         front_grass_rows: if front_grass {
             params.zoom.round().max(1.0) as f32
@@ -751,6 +755,24 @@ mod tests {
         plan(&mut frame, &scene, &session, &views, &options, (640, 480)).unwrap();
         assert_eq!(frame.instances.len(), instances);
         assert_eq!(frame.instances.capacity(), capacity);
+    }
+
+    #[test]
+    fn textures_keep_their_size_without_zoom_textures() {
+        let (scene, session) = setup(0);
+        let params = ViewParams {
+            zoom: 2.0,
+            ..view(0, false, false)
+        };
+        let scale = |zoom_textures| {
+            let options = RenderOptions {
+                zoom_textures,
+                ..Default::default()
+            };
+            view_uniform(&scene, &session, &params, 640, &options, false).texture_scale
+        };
+        assert_eq!(scale(true), 2.0);
+        assert_eq!(scale(false), 1.0);
     }
 
     #[test]

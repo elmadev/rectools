@@ -96,12 +96,28 @@ pub enum TextureZoom {
     Game,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct RenderOptions {
     pub dynamic: DynamicOptions,
     pub ghosts: GhostStyle,
     pub textures: TextureZoom,
+    // Textures, the ground's, the sky's and qgrass's, are resized for the zoom, like the
+    // pictures. Without, they keep their size at zoom 1, as elma-classic's "Zoom Textures"
+    // turned off does.
+    pub zoom_textures: bool,
     // View pixels to a game pixel for the timer's lines and the info panel's text. The game's
     // is 1, which a high density screen makes hard to see; 0 is taken as 1.
     pub hud_scale: u32,
+}
+
+impl Default for RenderOptions {
+    fn default() -> Self {
+        RenderOptions {
+            dynamic: DynamicOptions::default(),
+            ghosts: GhostStyle::default(),
+            textures: TextureZoom::default(),
+            zoom_textures: true,
+            hud_scale: 0,
+        }
+    }
 }

@@ -76,6 +76,9 @@ pub struct Settings {
     pub translucent_ghosts: bool,
     // Bikes and objects over every picture
     pub pictures_in_background: bool,
+    // The ground, sky and qgrass textures grow with the zoom, like the pictures; otherwise
+    // they keep their size at zoom 1, as elma-classic's "Zoom Textures" off
+    pub zoom_textures: bool,
     // Start over after the end
     pub looping: bool,
     pub level: LevelOptions,
@@ -93,6 +96,7 @@ impl Default for Settings {
             auto_zoom: false,
             translucent_ghosts: false,
             pictures_in_background: true,
+            zoom_textures: true,
             looping: true,
             level: LevelOptions::default(),
         }
@@ -595,6 +599,10 @@ impl Player {
         self.settings.pictures_in_background = value;
     }
 
+    pub fn set_zoom_textures(&mut self, value: bool) {
+        self.settings.zoom_textures = value;
+    }
+
     pub fn set_looping(&mut self, looping: bool) {
         self.settings.looping = looping;
     }
@@ -658,6 +666,7 @@ impl Player {
             // Textures stay on the level as the zoom changes, by hand or with auto zoom, rather
             // than move as the game's would
             textures: TextureZoom::Stable,
+            zoom_textures: s.zoom_textures,
             // The game's pixels, which the web player makes bigger on dense screens
             hud_scale: 1,
         }

@@ -45,6 +45,8 @@ export interface ControlsProps {
   onLastAppleTime(value: boolean): void;
   picturesInBackground: boolean;
   onPicturesInBackground(value: boolean): void;
+  zoomTextures: boolean;
+  onZoomTextures(value: boolean): void;
   autoZoom: boolean;
   onAutoZoom(value: boolean): void;
   translucentGhosts: boolean;
@@ -275,6 +277,12 @@ function Settings(p: ControlsProps) {
           />
         </>
       )}
+      <Toggle
+        label="Zoom textures"
+        value={p.zoomTextures}
+        onChange={p.onZoomTextures}
+        note="The ground, sky and grass textures grow with the zoom; off keeps them at their size at zoom 1"
+      />
       <p style={heading}>Keys</p>
       <table style={{ borderSpacing: "8px 2px", margin: "0 -8px", fontSize: 12 }}>
         <tbody>

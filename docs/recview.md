@@ -72,6 +72,7 @@ And recview's own:
 | S | Split screen for two player replays |
 | B | Ghosts blue and see-through |
 | Z | Auto zoom, to keep every bike in view |
+| Y | Zoom textures: the ground, sky and qgrass grow with the zoom, or keep their size at zoom 1 |
 | M | Sound |
 | L | Loop |
 | O | Open replays or a level |

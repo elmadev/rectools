@@ -70,6 +70,8 @@ Keys only recview has:
   S                   split screen for two player replays
   B                   ghosts blue and see-through, or like any bike
   Z                   auto zoom: zoom out to keep every ghost in view
+  Y                   zoom textures: the ground, sky and qgrass grow with the zoom, or
+                      keep their size at zoom 1
   M                   sound on / off
   L                   loop on / off
   O                   open replays or a level
@@ -187,7 +189,7 @@ type Flag = fn(&mut Prefs) -> &mut bool;
 
 impl Prefs {
     // The on/off settings by their key in the file
-    const FLAGS: [(&str, Flag); 17] = [
+    const FLAGS: [(&str, Flag); 18] = [
         ("centered_camera", |p| &mut p.settings.centered_camera),
         ("split_screen", |p| &mut p.settings.split_screen),
         ("timer", |p| &mut p.settings.timer),
@@ -200,6 +202,7 @@ impl Prefs {
         ("pictures_in_background", |p| {
             &mut p.settings.pictures_in_background
         }),
+        ("zoom_textures", |p| &mut p.settings.zoom_textures),
         ("grass", |p| &mut p.settings.level.grass),
         ("pictures", |p| &mut p.settings.level.pictures),
         ("custom_sky", |p| &mut p.settings.level.custom_sky),
@@ -918,6 +921,7 @@ impl App {
             "s" => p.set_split_screen(!s.split_screen),
             "b" => p.set_translucent_ghosts(!s.translucent_ghosts),
             "z" => p.set_auto_zoom(!s.auto_zoom),
+            "y" => p.set_zoom_textures(!s.zoom_textures),
             "l" => p.set_looping(!s.looping),
             "m" => {
                 self.muted = !self.muted;

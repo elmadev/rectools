@@ -30,6 +30,7 @@ struct Options {
     zoom: f64,
     camera: CameraMode,
     timer: bool,
+    zoom_textures: bool,
     minimap: bool,
     last_apple_time: bool,
     pause_end: bool,
@@ -65,6 +66,8 @@ Options:
   --size <w>x<h>      video size in pixels (default: 800x600)
   --fps <n>           frames per second (default: 30)
   --zoom <z>          zoom, any positive number (default: 1)
+  --no-zoom-textures  the ground, sky and qgrass textures keep their size at zoom 1,
+                      like elma-classic with Zoom Textures off
   --camera <mode>     classic or centered (default: classic)
   --no-timer          hide the timer
   --minimap           show the minimap
@@ -106,6 +109,7 @@ fn parse_arguments() -> Result<Options, String> {
         zoom: 1.0,
         camera: CameraMode::Classic,
         timer: true,
+        zoom_textures: true,
         minimap: false,
         last_apple_time: false,
         pause_end: false,
@@ -183,6 +187,7 @@ fn parse_arguments() -> Result<Options, String> {
                 );
             }
             "--no-timer" => opts.timer = false,
+            "--no-zoom-textures" => opts.zoom_textures = false,
             "--minimap" => opts.minimap = true,
             "--last-apple-time" => opts.last_apple_time = true,
             "--pause-end" => opts.pause_end = true,
@@ -421,6 +426,7 @@ fn render(
         } else {
             TextureZoom::Game
         },
+        zoom_textures: opts.zoom_textures,
         // The game's 1 pixel lines
         hud_scale: 1,
     };

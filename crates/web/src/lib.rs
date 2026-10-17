@@ -363,6 +363,8 @@ pub struct ViewerState {
     pub translucent_ghosts: bool,
     #[wasm_bindgen(js_name = picturesInBackground)]
     pub pictures_in_background: bool,
+    #[wasm_bindgen(js_name = zoomTextures)]
+    pub zoom_textures: bool,
     pub grass: bool,
     pub pictures: bool,
     #[wasm_bindgen(js_name = customSky)]
@@ -644,6 +646,7 @@ impl Viewer {
             auto_zoom_paused: p.auto_zoom_paused(),
             translucent_ghosts: s.translucent_ghosts,
             pictures_in_background: s.pictures_in_background,
+            zoom_textures: s.zoom_textures,
             grass: s.level.grass,
             pictures: s.level.pictures,
             custom_sky: s.level.custom_sky,
@@ -847,6 +850,13 @@ impl Viewer {
     #[wasm_bindgen(js_name = setPicturesInBackground)]
     pub fn set_pictures_in_background(&mut self, value: bool) {
         self.player.set_pictures_in_background(value);
+    }
+
+    // The ground, sky and qgrass textures grow with the zoom, like the pictures; otherwise they
+    // keep their size at zoom 1
+    #[wasm_bindgen(js_name = setZoomTextures)]
+    pub fn set_zoom_textures(&mut self, value: bool) {
+        self.player.set_zoom_textures(value);
     }
 
     // Size of the canvas in device pixels, and how many of them a CSS pixel is

@@ -368,3 +368,11 @@ fn a_level_on_its_own_has_no_minimap() {
     p.load(content(10.0, 0), false);
     assert!(p.views(0.0)[0].minimap);
 }
+
+#[test]
+fn textures_grow_with_the_zoom_unless_turned_off() {
+    let mut p = player(2.0, 0);
+    assert!(p.render_options().zoom_textures);
+    p.set_zoom_textures(false);
+    assert!(!p.render_options().zoom_textures);
+}
