@@ -13,6 +13,7 @@ use render::{
     surface_format,
 };
 use sound::Speaker;
+use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -21,7 +22,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::window::{Window, WindowId};
 
 const USAGE: &str = "Usage: recview [input.rec | input.lev] [options]
@@ -75,6 +76,7 @@ Keys only recview has:
   M                   sound on / off
   L                   loop on / off
   O                   open replays or a level
+  shift left, right   the previous / next replay or level in its folder
   shift O             choose the game folder, and play again from it
   escape, Q           quit";
 
@@ -396,6 +398,78 @@ fn is_level(path: &Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("lev"))
 }
 
+// Names compared without case and with the numbers in them as numbers, so lev2 comes
+// before lev10, and 01b0ne.rec before 01b0ne1.rec
+fn natural_order(a: &str, b: &str) -> Ordering {
+    let (mut a, mut b) = (a.as_bytes(), b.as_bytes());
+    loop {
+        match (a.first(), b.first()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(x), Some(y)) if x.is_ascii_digit() && y.is_ascii_digit() => {
+                let digits = |s: &[u8]| s.iter().take_while(|c| c.is_ascii_digit()).count();
+                let (da, db) = (digits(a), digits(b));
+                let trim = |s: &[u8]| -> Vec<u8> {
+                    s.iter().copied().skip_while(|&c| c == b'0').collect()
+                };
+                let (na, nb) = (trim(&a[..da]), trim(&b[..db]));
+                let order = na.len().cmp(&nb.len()).then_with(|| na.cmp(&nb));
+                if order != Ordering::Equal {
+                    return order;
+                }
+                (a, b) = (&a[da..], &b[db..]);
+            }
+            (Some(x), Some(y)) => {
+                let order = x.to_ascii_lowercase().cmp(&y.to_ascii_lowercase());
+                if order != Ordering::Equal {
+                    return order;
+                }
+                (a, b) = (&a[1..], &b[1..]);
+            }
+        }
+    }
+}
+
+// The file before (-1) or after (1) `path` in its folder, of the same kind: a replay's
+// neighbour is a replay, a level's a level. After the last comes the first again.
+fn neighbour(path: &Path, step: i32) -> Option<PathBuf> {
+    let extension = path.extension()?;
+    let dir = match path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir,
+        _ => Path::new("."),
+    };
+    let name = path.file_name()?.to_string_lossy().into_owned();
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|t| t.is_file()))
+        .map(|entry| PathBuf::from(entry.file_name()))
+        .filter(|file| {
+            file.extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case(extension))
+        })
+        .map(|file| file.to_string_lossy().into_owned())
+        .collect();
+    names.sort_by(|a, b| natural_order(a, b).then_with(|| a.cmp(b)));
+    // Where the file is, or would be if it was deleted since
+    let at =
+        names.binary_search_by(|n| natural_order(n, &name).then_with(|| n.as_str().cmp(&name)));
+    let len = names.len();
+    if len == 0 {
+        return None;
+    }
+    let index = match (at, step > 0) {
+        (Ok(i), true) => (i + 1) % len,
+        (Ok(i) | Err(i), false) => (i + len - 1) % len,
+        (Err(i), true) => i % len,
+    };
+    // The only one of its kind has no other to go to
+    Some(&names[index])
+        .filter(|n| **n != name)
+        .map(|n| dir.join(n))
+}
+
 // A level to look around, opened like a replay
 fn level_only(level: &Path) -> Opened {
     Opened {
@@ -454,6 +528,10 @@ struct App {
     last_save: Instant,
     // Files waiting to be opened, collected until the window is idle
     pending: Vec<PathBuf>,
+    // The file shift and an arrow went to, when it didn't open, so the next press goes on
+    // from it instead of trying it again
+    stepped_to: Option<PathBuf>,
+    modifiers: ModifiersState,
     error: Option<String>,
     last_frame: Instant,
     last_title: Instant,
@@ -648,6 +726,7 @@ impl App {
         if !loaded.level_only {
             self.waiting = None;
         }
+        self.stepped_to = None;
         self.current = Some(Current {
             name: title_name(&loaded.path, opened.ghosts.len()),
             opened,
@@ -705,10 +784,41 @@ impl App {
         }
     }
 
+    // Plays the replay before or after the one playing in its folder, on its own, or shows
+    // the level before or after the one shown
+    fn step_file(&mut self, step: i32) {
+        let Some(current) = &self.current else {
+            return;
+        };
+        let from = match &self.stepped_to {
+            Some(path) => path.clone(),
+            None => PathBuf::from(&current.opened.input),
+        };
+        let Some(next) = neighbour(&from, step) else {
+            return;
+        };
+        self.stepped_to = Some(next.clone());
+        if is_level(&next) {
+            return self.open(level_only(&next), None, false);
+        }
+        // The level chosen for the replay before is the one of the next, if it is the same
+        let level_id = current.level_id;
+        let level_file = current.level_file.clone().filter(|_| {
+            !self.player.level_only() && level_id_of(&next.to_string_lossy()) == Some(level_id)
+        });
+        let opened = Opened {
+            input: next.to_string_lossy().into_owned(),
+            nick: String::new(),
+            ghosts: Vec::new(),
+        };
+        self.open(opened, level_file, false);
+    }
+
     fn open_pending(&mut self) {
         if self.pending.is_empty() || self.gpu.is_none() {
             return;
         }
+        self.stepped_to = None;
         let paths = std::mem::take(&mut self.pending);
         let level = paths.iter().find(|p| is_level(p)).cloned();
         let recs: Vec<String> = paths
@@ -906,6 +1016,12 @@ impl App {
             Key::Character(c) => c.to_string(),
             _ => return,
         };
+        if self.modifiers.shift_key() && name.starts_with("Arrow") {
+            if !repeat {
+                self.step_file(if name == "ArrowLeft" { -1 } else { 1 });
+            }
+            return;
+        }
         // recview's own keys are all toggles, which a held key flips only once
         if self.player.key(&name, repeat) || repeat {
             return;
@@ -1007,6 +1123,9 @@ impl ApplicationHandler<Vec<PathBuf>> for App {
             WindowEvent::Resized(size) => self.resize(size.width, size.height),
             WindowEvent::RedrawRequested => self.redraw(),
             WindowEvent::DroppedFile(path) => self.pending.push(path),
+            WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
+            // Shift let go of in another window doesn't stay held here
+            WindowEvent::Focused(false) => self.modifiers = ModifiersState::empty(),
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state == ElementState::Pressed {
                     self.key(event_loop, &event.logical_key, event.repeat);
@@ -1102,6 +1221,8 @@ fn main() -> ExitCode {
         gpu: None,
         current: None,
         pending: Vec::new(),
+        stepped_to: None,
+        modifiers: ModifiersState::empty(),
         error: None,
         last_frame: Instant::now(),
         last_title: Instant::now(),
@@ -1119,5 +1240,69 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
         None => ExitCode::SUCCESS,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn natural_order_sorts_numbers_as_numbers() {
+        let mut names = vec![
+            "lev10.lev",
+            "LEV2.lev",
+            "01b0ne1.rec",
+            "01b0ne.rec",
+            "lev1.lev",
+        ];
+        names.sort_by(|a, b| natural_order(a, b));
+        assert_eq!(
+            names,
+            [
+                "01b0ne.rec",
+                "01b0ne1.rec",
+                "lev1.lev",
+                "LEV2.lev",
+                "lev10.lev"
+            ]
+        );
+        assert_eq!(natural_order("qwquu001", "qwquu002"), Ordering::Less);
+    }
+
+    #[test]
+    fn neighbour_is_a_file_of_the_same_kind() {
+        let dir = std::env::temp_dir().join(format!("recview-neighbour-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in [
+            "01b0ne.rec",
+            "01b0ne1.rec",
+            "02.REC",
+            "qwquu001.lev",
+            "qwquu002.lev",
+        ] {
+            std::fs::write(dir.join(name), b"").unwrap();
+        }
+        let next = |name: &str, step| {
+            neighbour(&dir.join(name), step).map(|p| p.file_name().unwrap().to_owned())
+        };
+        assert_eq!(next("01b0ne.rec", 1), Some("01b0ne1.rec".into()));
+        assert_eq!(next("01b0ne1.rec", 1), Some("02.REC".into()));
+        assert_eq!(next("02.REC", 1), Some("01b0ne.rec".into()));
+        assert_eq!(next("01b0ne.rec", -1), Some("02.REC".into()));
+        assert_eq!(next("qwquu002.lev", 1), Some("qwquu001.lev".into()));
+        // The last file is the first after it, even when it is gone
+        assert_eq!(next("03.rec", 1), Some("01b0ne.rec".into()));
+        assert_eq!(next("qwquu001.lev", 1), Some("qwquu002.lev".into()));
+        assert_eq!(next("qwquu002.lev", -1), Some("qwquu001.lev".into()));
+        // A level alone in its folder has none, nor has a replay whose folder is empty
+        std::fs::remove_file(dir.join("qwquu001.lev")).unwrap();
+        assert_eq!(next("qwquu002.lev", 1), None);
+        std::fs::remove_file(dir.join("qwquu002.lev")).unwrap();
+        assert_eq!(next("qwquu002.lev", 1), None);
+        // A file that is gone still has neighbours
+        assert_eq!(next("01b0ne0.rec", 1), Some("01b0ne1.rec".into()));
+        assert_eq!(next("01b0ne0.rec", -1), Some("01b0ne.rec".into()));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

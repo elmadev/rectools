@@ -76,6 +76,7 @@ And recview's own:
 | M | Sound |
 | L | Loop |
 | O | Open replays or a level |
+| Shift ← / → | The previous / next replay or level in its folder |
 | Shift O | Choose the game folder |
 | Esc, Q | Quit |
 
