@@ -128,9 +128,155 @@ impl Instance {
     }
 }
 
+// Where the game puts a picture at the view's zoom, in whole pixels of the canvas from its
+// origin, y up: the left column, the top row and the size it resizes the picture to. A level
+// picture's or object's at the zoom, and drawn there instead of its quad; others have
+// height 0 and are drawn as their quad says.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Pod, Zeroable)]
+pub struct CanvasRect {
+    pub left: i32,
+    pub top: i32,
+    pub width: i32,
+    pub height: i32,
+    // See resize_rounding
+    pub rounding: f32,
+    // Flipped or turned after resizing, see the orientation module
+    pub orientation: u32,
+}
+
+// How a placed picture is flipped or turned after it is resized, as the game makes the
+// gravity arrows from one picture: pixel (row, column) of the rect from its top left is
+// mirrored by FLIP_ROWS and FLIP_COLUMNS, then the two are swapped by TRANSPOSE, and it shows
+// that pixel of the resized picture
+pub mod orientation {
+    pub const FLIP_ROWS: u32 = 1;
+    pub const FLIP_COLUMNS: u32 = 2;
+    pub const TRANSPOSE: u32 = 4;
+}
+
+impl CanvasRect {
+    // Drawn as its quad says
+    pub const NONE: CanvasRect = CanvasRect {
+        left: 0,
+        top: 0,
+        width: 0,
+        height: 0,
+        rounding: 0.0,
+        orientation: 0,
+    };
+    // Left out at this zoom, as the game leaves out pictures too close to the canvas's sides
+    pub const HIDDEN: CanvasRect = CanvasRect {
+        left: 0,
+        top: 0,
+        width: 0,
+        height: -1,
+        rounding: 0.0,
+        orientation: 0,
+    };
+
+    // A picture `source` pixels big, which the game resizes to `target_height` rows like
+    // pic8::resize does, with its top left pixel at (left, top)
+    pub fn from_top(left: i32, top: i32, source: (usize, usize), target_height: i32) -> CanvasRect {
+        let (width, height) = resized_size(source, target_height);
+        CanvasRect {
+            left,
+            top,
+            width,
+            height,
+            rounding: resize_rounding(source.1, height),
+            orientation: 0,
+        }
+    }
+
+    // Like from_top, with its bottom left pixel at (left, bottom)
+    pub fn from_bottom(
+        left: i32,
+        bottom: i32,
+        source: (usize, usize),
+        target_height: i32,
+    ) -> CanvasRect {
+        let rect = CanvasRect::from_top(left, 0, source, target_height);
+        CanvasRect {
+            top: bottom + rect.height - 1,
+            ..rect
+        }
+    }
+}
+
+// The size pic8::resize gives a picture of `source` pixels resized to `target_height` rows
+pub fn resized_size((width, height): (usize, usize), target_height: i32) -> (i32, i32) {
+    let target_height = target_height.max(1);
+    if target_height as usize == height {
+        return (width as i32, target_height);
+    }
+    let scale = target_height as f64 / height as f64;
+    (((width as f64 * scale) as i32).max(1), target_height)
+}
+
+// pic8::resize takes pixel i of a picture resized from `height` rows to `resized` from
+// (int)(i / scale), with scale = resized / height in doubles. That is i * height / resized
+// rounded down, but where that comes out a whole number k, the doubles can come out just under
+// it and give k - 1. They all do by the same ratio, the scale's rounding error d, and k - 1
+// is what the doubles give when k * d is over half the gap to the double below k. This is
+// d * 2^53, which the shader compares with k: 0 when the scale rounds down and they never do.
+pub fn resize_rounding(height: usize, resized: i32) -> f32 {
+    let scale = resized as f64 / height as f64;
+    // Exact, as it is a small multiple of the scale's last bit
+    let error = scale.mul_add(height as f64, -(resized as f64));
+    if error <= 0.0 {
+        return 0.0;
+    }
+    (error / (scale * height as f64) * 2f64.powi(53)) as f32
+}
+
 // Lower distances are closer. The empty canvas is at depth 1.
 pub fn distance_to_depth(distance: f64) -> f32 {
     (distance.clamp(0.0, 2000.0) / 2048.0) as f32
 }
 
 pub const BIKE_DISTANCE: f64 = 500.0;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The shader's resize_source, which resize_rounding is for
+    fn resize_source(i: i32, height: i32, resized: i32, rounding: f32) -> i32 {
+        let k = (i * height).div_euclid(resized);
+        if rounding == 0.0 || k <= 0 || k * resized != i * height {
+            return k;
+        }
+        let e = 1 << (31 - k.leading_zeros());
+        let below = if e == k {
+            rounding > 0.5
+        } else {
+            k as f32 * rounding > e as f32
+        };
+        k - below as i32
+    }
+
+    #[test]
+    fn resized_pixels_come_from_where_the_games_doubles_take_them() {
+        let mut rounded_down = 0;
+        for height in 1..300usize {
+            for zoom in (25..400).map(|z| z as f64 / 100.0) {
+                let resized = ((zoom * height as f64) as i32).max(1);
+                let scale = resized as f64 / height as f64;
+                let rounding = resize_rounding(height, resized);
+                for i in 0..resized * 2 {
+                    let game = (i as f64 / scale) as i32;
+                    assert_eq!(
+                        resize_source(i, height as i32, resized, rounding),
+                        game,
+                        "{i} of {height} resized to {resized}"
+                    );
+                    rounded_down += (game * resized < i * height as i32) as usize
+                        * (((game + 1) * resized) == i * height as i32) as usize;
+                }
+            }
+        }
+        // The case it is for comes up
+        assert!(rounded_down > 0);
+    }
+}

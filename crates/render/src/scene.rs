@@ -3,7 +3,9 @@ use crate::atlas::{AtlasBuilder, AtlasRect};
 use crate::bike::{BikeDraw, BikeSprites, Sprite, draw_bike};
 use crate::camera::bounds;
 use crate::grass::{self, GRASS_DISTANCE, Piece, QGRASS_MARGIN, QUPDOWN_MARGIN};
-use crate::instance::{BIKE_DISTANCE, Instance, M2P, layer, mode, snap_to_pixel_center};
+use crate::instance::{
+    BIKE_DISTANCE, CanvasRect, Instance, M2P, layer, mode, resized_size, snap_to_pixel_center,
+};
 use crate::minimap::Minimap;
 use crate::plan::RenderError;
 use elma_formats::Graphics;
@@ -62,7 +64,8 @@ pub struct Sprites {
     pub exit_transparency: u8,
     pub food: Vec<(Vec<AtlasRect>, u8)>,
     // Up, down, left, right, as they appear on screen
-    pub arrows: Option<([AtlasRect; 4], u8)>,
+    // The picture of the down arrow, which the others are made from as they are drawn
+    pub arrows: Option<(AtlasRect, u8)>,
     // Indexed like the session's riders followed by its ghosts
     pub shirts: Vec<Option<Sprite>>,
 }
@@ -100,6 +103,8 @@ pub struct ElmaLook {
     // Bottom left of the level plus the margins, before snapping to pixels, which the game
     // snaps again at each zoom
     pub canvas_corner: Vec2,
+    // The right edge of the level plus the margin, where the game's canvas ends
+    pub canvas_right: f64,
 }
 
 // The pictures and grass drawn with the level: those the ground clips, those the sky clips,
@@ -107,11 +112,65 @@ pub struct ElmaLook {
 #[derive(Default)]
 pub struct Pictures {
     pub instances: Vec<Instance>,
+    // By instance, where the game puts each picture and mask; the grass has none
+    pub placements: Vec<Option<Placement>>,
     pub ground: Range<u32>,
     pub sky: Range<u32>,
     pub unclipped: Range<u32>,
     // Qgrass can move in front of the bikes: there is qgrass and a picture in front
     pub front_grass: bool,
+}
+
+impl ElmaLook {
+    // The canvas origin the game snaps to the middle of a pixel at `ppm`
+    pub(crate) fn canvas_origin(&self, ppm: f64) -> Vec2 {
+        let quantize = |m: f64| snap_to_pixel_center(m, ppm);
+        Vec2::new(
+            quantize(self.canvas_corner.x),
+            quantize(self.canvas_corner.y),
+        )
+    }
+
+    // Where the game draws each of the pictures' instances at `zoom`, into `out`. Those it
+    // leaves out for being too close to the canvas's sides are HIDDEN.
+    pub(crate) fn picture_rects(&self, zoom: f64, out: &mut Vec<CanvasRect>) {
+        let ppm = crate::camera::pixels_per_meter(zoom);
+        let origin = self.canvas_origin(ppm);
+        let pixel_width = ((self.canvas_right - origin.x) * ppm) as i32;
+        out.extend(self.pictures.placements.iter().map(|p| {
+            let Some(p) = p else {
+                return CanvasRect::NONE;
+            };
+            let r = p.rect(origin, ppm, zoom);
+            if r.left < CANVAS_SAFETY_LEFT || r.left + r.width >= pixel_width - CANVAS_SAFETY_RIGHT
+            {
+                CanvasRect::HIDDEN
+            } else {
+                r
+            }
+        }));
+    }
+}
+
+// A level picture or mask as the game places it at any zoom: from the top left corner of the
+// sprite, resized from the picture in the file
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Placement {
+    // The sprite's position, y up
+    pub r: Vec2,
+    // The picture in the file, which the atlas has as it is
+    pub source: (usize, usize),
+    // Its height at zoom 1
+    pub height: i32,
+}
+
+impl Placement {
+    // Where the game draws it on a canvas with its origin at `origin`, `ppm` pixels a meter
+    pub fn rect(&self, origin: Vec2, ppm: f64, zoom: f64) -> CanvasRect {
+        let left = ((self.r.x - origin.x) * ppm) as i32;
+        let top = ((self.r.y - origin.y) * ppm) as i32;
+        CanvasRect::from_top(left, top, self.source, (zoom * self.height as f64) as i32)
+    }
 }
 
 impl Scene {
@@ -184,7 +243,14 @@ impl Scene {
         let atlas_size = atlas_size(largest, max_atlas_size)?;
         let mut atlas = AtlasBuilder::new(atlas_size);
 
-        // Images the LGR stores at another size are resized exactly like the game does at
+        // Pictures and masks are resized as they are drawn, from the file's, at any zoom
+        let pictures: Vec<AtlasRect> = lgr
+            .pictures
+            .iter()
+            .map(|p| atlas.add(&p.image.pic))
+            .collect();
+        let masks: Vec<AtlasRect> = lgr.masks.iter().map(|m| atlas.add(&m.image.pic)).collect();
+        // Textures the LGR stores at another size are resized exactly like the game does at
         // zoom 1, so the same rows and columns repeat
         let mut add_image = |image: &Image| {
             if image.pic.height == image.height && image.pic.width == image.width {
@@ -193,8 +259,6 @@ impl Scene {
                 atlas.add(&image.pic.resized(image.height as i32))
             }
         };
-        let pictures: Vec<AtlasRect> = lgr.pictures.iter().map(|p| add_image(&p.image)).collect();
-        let masks: Vec<AtlasRect> = lgr.masks.iter().map(|m| add_image(&m.image)).collect();
         // Textures are flipped after the game resizes them
         let textures: Vec<AtlasRect> = lgr
             .textures
@@ -255,77 +319,82 @@ impl Scene {
 
         let qgrass = lgr.texture("qgrass");
         let mut instances = Vec::new();
-        let sprite_instances = |clipping: Clipping, out: &mut Vec<Instance>| {
-            for spr in &level.sprites {
-                if spr.clipping != Some(clipping) {
-                    continue;
+        let mut placements = Vec::new();
+        let sprite_instances =
+            |clipping: Clipping, out: &mut Vec<Instance>, placed: &mut Vec<Option<Placement>>| {
+                for spr in &level.sprites {
+                    if spr.clipping != Some(clipping) {
+                        continue;
+                    }
+                    let x = ((spr.r.x - origin.x) * M2P) as i32;
+                    let y = ((-spr.r.y - origin.y) * M2P) as i32;
+                    let distance = spr.distance as f64;
+                    let front = if spr.distance <= 500 {
+                        layer::FRONT
+                    } else {
+                        layer::OTHER
+                    };
+                    let (instance, image) = if spr.picture.is_empty() {
+                        if spr.texture.is_empty() || spr.mask.is_empty() {
+                            continue;
+                        }
+                        let (Some(t), Some(m)) = (lgr.texture(&spr.texture), lgr.mask(&spr.mask))
+                        else {
+                            continue;
+                        };
+                        let mask = &lgr.masks[m];
+                        let (w, h) = (mask.image.width, mask.image.height);
+                        let is_qgrass = Some(t) == qgrass;
+                        let layer = match (is_qgrass, spr.distance > 500) {
+                            (true, true) => layer::QGRASS,
+                            (true, false) => layer::OTHER,
+                            _ => front,
+                        };
+                        let instance = rect_instance(to_world(x as f64, (y + 1) as f64), w, h)
+                            .image(masks[m], mask.transparency)
+                            .texture(texture_ref(t).rect, texture_ref(t).size)
+                            .mode(mode::MASKED_TEXTURE)
+                            .layer(layer);
+                        (instance, &mask.image)
+                    } else {
+                        if !spr.texture.is_empty() || !spr.mask.is_empty() {
+                            continue;
+                        }
+                        let Some(p) = lgr.picture(&spr.picture) else {
+                            continue;
+                        };
+                        let picture = &lgr.pictures[p];
+                        if picture.solid.is_some() && !options.fancyboost {
+                            continue;
+                        }
+                        let (w, h) = (picture.image.width, picture.image.height);
+                        let mut instance =
+                            rect_instance(to_world(x as f64, (y + 1) as f64), w, h).layer(front);
+                        instance = match picture.solid {
+                            Some(color) => instance.mode(mode::SOLID).color(color),
+                            None => instance.image(pictures[p], Some(picture.transparency)),
+                        };
+                        (instance, &picture.image)
+                    };
+                    // Which are too close to the canvas's sides depends on the zoom
+                    placed.push(Some(Placement {
+                        r: Vec2::new(spr.r.x, -spr.r.y),
+                        source: (image.pic.width, image.pic.height),
+                        height: image.height as i32,
+                    }));
+                    let over_bikes = if distance < BIKE_DISTANCE {
+                        layer::OVER_BIKES
+                    } else {
+                        0
+                    };
+                    let layer = instance.layer | over_bikes;
+                    out.push(instance.distance(distance).layer(layer));
                 }
-                let x = ((spr.r.x - origin.x) * M2P) as i32;
-                let y = ((-spr.r.y - origin.y) * M2P) as i32;
-                let distance = spr.distance as f64;
-                let front = if spr.distance <= 500 {
-                    layer::FRONT
-                } else {
-                    layer::OTHER
-                };
-                let (instance, width) = if spr.picture.is_empty() {
-                    if spr.texture.is_empty() || spr.mask.is_empty() {
-                        continue;
-                    }
-                    let (Some(t), Some(m)) = (lgr.texture(&spr.texture), lgr.mask(&spr.mask))
-                    else {
-                        continue;
-                    };
-                    let mask = &lgr.masks[m];
-                    let (w, h) = (mask.image.width, mask.image.height);
-                    let is_qgrass = Some(t) == qgrass;
-                    let layer = match (is_qgrass, spr.distance > 500) {
-                        (true, true) => layer::QGRASS,
-                        (true, false) => layer::OTHER,
-                        _ => front,
-                    };
-                    let instance = rect_instance(to_world(x as f64, (y + 1) as f64), w, h)
-                        .image(masks[m], mask.transparency)
-                        .texture(texture_ref(t).rect, texture_ref(t).size)
-                        .mode(mode::MASKED_TEXTURE)
-                        .layer(layer);
-                    (instance, w)
-                } else {
-                    if !spr.texture.is_empty() || !spr.mask.is_empty() {
-                        continue;
-                    }
-                    let Some(p) = lgr.picture(&spr.picture) else {
-                        continue;
-                    };
-                    let picture = &lgr.pictures[p];
-                    if picture.solid.is_some() && !options.fancyboost {
-                        continue;
-                    }
-                    let (w, h) = (picture.image.width, picture.image.height);
-                    let mut instance =
-                        rect_instance(to_world(x as f64, (y + 1) as f64), w, h).layer(front);
-                    instance = match picture.solid {
-                        Some(color) => instance.mode(mode::SOLID).color(color),
-                        None => instance.image(pictures[p], Some(picture.transparency)),
-                    };
-                    (instance, w)
-                };
-                if x < CANVAS_SAFETY_LEFT || x + width as i32 >= pixel_width - CANVAS_SAFETY_RIGHT {
-                    continue;
-                }
-                let over_bikes = if distance < BIKE_DISTANCE {
-                    layer::OVER_BIKES
-                } else {
-                    0
-                };
-                let layer = instance.layer | over_bikes;
-                out.push(instance.distance(distance).layer(layer));
-            }
-        };
+            };
 
         let ground_start = instances.len() as u32;
         if options.pictures {
-            sprite_instances(Clipping::Ground, &mut instances);
+            sprite_instances(Clipping::Ground, &mut instances, &mut placements);
         }
         if options.grass
             && lgr.has_grass()
@@ -341,13 +410,15 @@ impl Scene {
                 &mut instances,
             );
         }
+        // The grass is placed at zoom 1
+        placements.resize(instances.len(), None);
         let sky_start = instances.len() as u32;
         if options.pictures {
-            sprite_instances(Clipping::Sky, &mut instances);
+            sprite_instances(Clipping::Sky, &mut instances, &mut placements);
         }
         let unclipped_start = instances.len() as u32;
         if options.pictures {
-            sprite_instances(Clipping::Unclipped, &mut instances);
+            sprite_instances(Clipping::Unclipped, &mut instances, &mut placements);
         }
         let end = instances.len() as u32;
         let front_grass = [layer::QGRASS, layer::FRONT]
@@ -380,12 +451,14 @@ impl Scene {
                 background: texture_ref(bg),
                 pictures: Pictures {
                     instances,
+                    placements,
                     ground: ground_start..sky_start,
                     sky: sky_start..unclipped_start,
                     unclipped: unclipped_start..end,
                     front_grass,
                 },
                 canvas_corner,
+                canvas_right: max.x + MARGIN_X,
             })),
         })
     }
@@ -439,22 +512,11 @@ fn add_anim(atlas: &mut AtlasBuilder, anim: &Anim) -> Vec<AtlasRect> {
     anim.frames.iter().map(|f| atlas.add(f)).collect()
 }
 
-fn add_arrows(atlas: &mut AtlasBuilder) -> Option<([AtlasRect; 4], u8)> {
+// The bitmap points down
+fn add_arrows(atlas: &mut AtlasBuilder) -> Option<(AtlasRect, u8)> {
     let bmp = decode_bmp(GRAVITY_ARROW_BMP).ok()?;
     let transparency = bmp.get(0, 0);
-    // The bitmap points down
-    let up = bmp.flipped_vertically();
-    let left = up.transposed().flipped_vertically();
-    let right = bmp.transposed().flipped_vertically();
-    Some((
-        [
-            atlas.add(&up),
-            atlas.add(&bmp),
-            atlas.add(&left),
-            atlas.add(&right),
-        ],
-        transparency,
-    ))
+    Some((atlas.add(&bmp), transparency))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -552,13 +614,17 @@ impl Default for DynamicOptions {
 // Objects and bikes of the view following main rider `follow`, or ghost `ghost` when it
 // follows one: then the apples it has taken are gone instead of the main riders', and it is
 // drawn over every other bike. Returns where the other ghosts are in `out`.
+// The objects are where the game puts them at `zoom`, by their index in `out` in `placed`.
+#[allow(clippy::too_many_arguments)]
 pub fn dynamic_instances(
     scene: &Scene,
     session: &Session,
     follow: usize,
     ghost: Option<usize>,
     options: &DynamicOptions,
+    zoom: f64,
     out: &mut Vec<Instance>,
+    placed: &mut Vec<(usize, CanvasRect)>,
 ) -> std::ops::Range<u32> {
     let time = session.time;
     let taken_by_ghost = ghost.and_then(|g| session.ghosts.get(g)).map(|g| {
@@ -574,13 +640,17 @@ pub fn dynamic_instances(
         Some(taken) => !taken[i],
         None => object.active,
     };
-    let sprites = match &scene.look {
-        Look::Elma(elma) => &elma.sprites,
+    let (sprites, elma) = match &scene.look {
+        Look::Elma(elma) => (&elma.sprites, elma),
         Look::Across(sprites) => {
             return across_instances(sprites, session, follow, ghost, options, &active, out);
         }
     };
     let origin = scene.canvas_origin;
+    // The game's canvas at this zoom, which it puts the objects on in whole pixels
+    let ppm = crate::camera::pixels_per_meter(zoom);
+    let canvas = elma.canvas_origin(ppm);
+    let object_size = (ANIM_WIDTH as f64 * zoom) as i32;
     let multiplayer = session.riders.len() > 1;
     let hide_exit = multiplayer && session.flagtag;
     let size = ANIM_WIDTH as f64 / M2P;
@@ -603,32 +673,63 @@ pub fn dynamic_instances(
         } else {
             0
         };
+        let phase = (time * 15.5 + object.floating_phase).sin();
         let bob = if floats && !options.still_objects {
-            5.0 * (time * 15.5 + object.floating_phase).sin() / M2P
+            5.0 * phase / M2P
         } else {
             0.0
         };
+        let bob_pixels = if floats && !options.still_objects {
+            (5.0 * zoom * phase) as i32
+        } else {
+            0
+        };
+        let offset = ANIM_WIDTH as f64 / 2.0 * zoom;
+        let canvas_x = ((object.r.x - canvas.x) * ppm - offset) as i32;
+        let canvas_y = ((object.r.y - canvas.y) * ppm - offset) as i32 + bob_pixels;
+        let source = |r: AtlasRect| (r.width as usize, r.height as usize);
         let x = ((object.r.x - origin.x) * M2P - ANIM_WIDTH as f64 / 2.0) as i32;
         let y = ((object.r.y - origin.y) * M2P - ANIM_WIDTH as f64 / 2.0) as i32;
         let left = origin.x + x as f64 / M2P;
         let bottom = origin.y + y as f64 / M2P + bob;
         let quad =
             Instance::new([left, bottom + size], [size, 0.0], [0.0, -size]).distance(BIKE_DISTANCE);
+        placed.push((
+            out.len(),
+            CanvasRect::from_bottom(canvas_x, canvas_y, source(frames[frame]), object_size),
+        ));
         out.push(quad.image(frames[frame], Some(transparency)));
 
         if options.gravity_arrows
             && object.kind == ObjectType::Food
-            && let Some((arrows, transparency)) = &sprites.arrows
+            && let Some((arrow, transparency)) = sprites.arrows
         {
-            let index = match object.gravity {
-                Gravity::Up => 0,
-                Gravity::Down => 1,
-                Gravity::Left => 2,
-                Gravity::Right => 3,
+            // The game resizes the down arrow, then flips it up and turns those left and right
+            use crate::instance::orientation::{FLIP_COLUMNS, FLIP_ROWS, TRANSPOSE};
+            let turned = match object.gravity {
+                Gravity::Up => FLIP_ROWS,
+                Gravity::Down => 0,
+                Gravity::Left => FLIP_ROWS | FLIP_COLUMNS | TRANSPOSE,
+                Gravity::Right => FLIP_ROWS | TRANSPOSE,
                 Gravity::None => continue,
             };
+            // Resized like the objects, in the middle of the object
+            let half = object_size / 2;
+            let (w, h) = resized_size(source(arrow), object_size);
+            placed.push((
+                out.len(),
+                CanvasRect {
+                    orientation: turned,
+                    ..CanvasRect::from_bottom(
+                        canvas_x + half - w / 2,
+                        canvas_y + half - h / 2,
+                        source(arrow),
+                        object_size,
+                    )
+                },
+            ));
             out.push(
-                quad.image(arrows[index], Some(*transparency))
+                quad.image(arrow, Some(transparency))
                     .mode(mode::RECOLOR)
                     .color(GRAVITY_ARROW_COLOR),
             );

@@ -4,7 +4,7 @@
 
 use crate::camera::{self, view_corner};
 use crate::hud::{PixelRect, last_apple_rects, timer_rects};
-use crate::instance::{Instance, M2P, mode, snap_to_pixel_center};
+use crate::instance::{CanvasRect, Instance, mode, snap_to_pixel_center};
 use crate::options::{CameraMode, GhostStyle, RenderOptions, TextureZoom, ViewParams};
 use crate::scene::{Look, Scene, TextureRef, dynamic_instances};
 use bytemuck::{Pod, Zeroable};
@@ -28,6 +28,8 @@ pub(crate) struct ViewUniform {
     canvas_origin: [f32; 2],
     size: [f32; 2],
     offset: [f32; 2],
+    // The view's bottom left pixel on the canvas, counted from the canvas origin
+    canvas_pixel: [f32; 2],
     pixels_per_meter: f32,
     texture_scale: f32,
     sky_x: f32,
@@ -44,6 +46,8 @@ pub(crate) struct ViewUniform {
     // To the size of the shader's struct, a multiple of its vec2s
     _padding: u32,
 }
+
+const _: () = assert!(std::mem::size_of::<ViewUniform>().is_multiple_of(8));
 
 // A rectangle of the timer or the info panel's text, in target pixels from the bottom left:
 // the text in a color of the palette, the timer as TIMER_COLOR
@@ -102,6 +106,14 @@ pub struct FramePlan {
     // A ViewUniform per slot, UNIFORM_STRIDE bytes apart
     pub(crate) uniforms: Vec<u8>,
     pub(crate) instances: Vec<Instance>,
+    // By instance, where the game puts it: objects at the view's zoom
+    pub(crate) rects: Vec<CanvasRect>,
+    // The level pictures' rects of each view in turn, as many as the scene's level instances
+    pub(crate) level_rects: Vec<CanvasRect>,
+    // They changed since the frame before, and go to the GPU again
+    pub(crate) level_rects_changed: bool,
+    placed: Vec<(usize, CanvasRect)>,
+    previous_level_rects: Vec<CanvasRect>,
     pub(crate) timer: Vec<HudRect>,
     pub(crate) views: Vec<ViewDraw>,
     // The instance of the frame behind the views, None when they cover the target
@@ -118,7 +130,7 @@ fn view_uniform(
     front_grass: bool,
 ) -> ViewUniform {
     let [vx, vy, vw, vh] = params.viewport;
-    let ppm = M2P * params.zoom;
+    let ppm = camera::pixels_per_meter(params.zoom);
     let corner = view_corner(session, params, target_width);
     let canvas_corner = match &scene.look {
         Look::Elma(elma) => elma.canvas_corner,
@@ -141,6 +153,7 @@ fn view_uniform(
         canvas_origin: f2(origin),
         size: [vw as f32, vh as f32],
         offset: [vx as f32, vy as f32],
+        canvas_pixel: [view_left as f32, view_bottom as f32],
         pixels_per_meter: ppm as f32,
         texture_scale: if options.zoom_textures {
             params.zoom as f32
@@ -212,6 +225,7 @@ pub fn plan(
     timer_data.clear();
     let scratch = &mut frame.instances;
     scratch.clear();
+    frame.placed.clear();
     // With pictures in the background, the bikes go over everything
     let front_grass =
         !options.dynamic.pictures_in_background && scene.pictures().is_some_and(|p| p.front_grass);
@@ -266,7 +280,9 @@ pub fn plan(
             rider,
             ghost_index,
             &options.dynamic,
+            params.zoom,
             scratch,
+            &mut frame.placed,
         );
         // The timer stops when the followed replay ends, even if other bikes go on, and then
         // shows its time
@@ -412,6 +428,21 @@ pub fn plan(
         scratch.len() as u32 - 1
     });
     frame.translucent_ghosts = translucent_ghosts;
+    frame.rects.clear();
+    frame.rects.resize(frame.instances.len(), CanvasRect::NONE);
+    for &(i, rect) in &frame.placed {
+        frame.rects[i] = rect;
+    }
+    // Worked out again each frame, which takes little, and sent again when they change: with
+    // the zoom, or the scene
+    std::mem::swap(&mut frame.level_rects, &mut frame.previous_level_rects);
+    frame.level_rects.clear();
+    if let Look::Elma(elma) = &scene.look {
+        for params in views {
+            elma.picture_rects(params.zoom, &mut frame.level_rects);
+        }
+    }
+    frame.level_rects_changed = frame.level_rects != frame.previous_level_rects;
     Ok(())
 }
 
@@ -730,6 +761,56 @@ mod tests {
         let front = layer::FRONT | layer::OVER_BIKES;
         assert!(pictures.instances.iter().any(|i| i.layer == front));
         assert!(!pictures.front_grass);
+    }
+
+    #[test]
+    fn pictures_are_resized_and_placed_like_the_game_at_each_zoom() {
+        use elma_formats::lev::{Clipping, Sprite};
+        let mut level = level();
+        level.sprites.push(Sprite {
+            picture: "zz000000".into(),
+            texture: String::new(),
+            mask: String::new(),
+            r: LevVec2 { x: 20.0, y: 5.0 },
+            distance: 500,
+            clipping: Some(Clipping::Unclipped),
+        });
+        let graphics = Graphics::Elma(Box::new(Lgr::stub()));
+        let scene = Scene::new(&graphics, &level, &[], &SceneOptions::default(), 4096).unwrap();
+        let Look::Elma(elma) = &scene.look else {
+            unreachable!()
+        };
+        let rect = |zoom: f64| {
+            let mut rects = Vec::new();
+            elma.picture_rects(zoom, &mut rects);
+            rects[0]
+        };
+        for zoom in [1.0, 1.5, 0.8, 2.25] {
+            let ppm = camera::pixels_per_meter(zoom);
+            let origin = elma.canvas_origin(ppm);
+            let r = rect(zoom);
+            // A fancyboost square is 200 pixels at zoom 1, from its top left corner
+            let size = (zoom * 200.0) as i32;
+            assert_eq!((r.width, r.height), (size, size), "{zoom}");
+            assert_eq!(r.left, ((20.0 - origin.x) * ppm) as i32);
+            assert_eq!(r.top, ((-5.0 - origin.y) * ppm) as i32);
+        }
+        // The game leaves out pictures too close to the canvas's right side, which depends on
+        // how wide the picture comes out
+        let right = elma.canvas_right;
+        let at = |x: f64| {
+            let mut level = level.clone();
+            level.sprites[0].r.x = x;
+            let scene = Scene::new(&graphics, &level, &[], &SceneOptions::default(), 4096).unwrap();
+            let Look::Elma(elma) = &scene.look else {
+                unreachable!()
+            };
+            let mut rects = Vec::new();
+            elma.picture_rects(1.0, &mut rects);
+            rects[0]
+        };
+        assert_eq!(at(right - 2.0), CanvasRect::HIDDEN);
+        assert_ne!(at(right - 10.0), CanvasRect::HIDDEN);
     }
 
     #[test]

@@ -7,7 +7,7 @@ use replay::{Rider, Session, Vec2};
 // view has a fixed center. `screen_width` is the width of the whole output.
 pub fn view_corner(session: &Session, params: &ViewParams, screen_width: u32) -> Vec2 {
     let (vw, vh) = (params.viewport[2] as f64, params.viewport[3] as f64);
-    let ppm = M2P * params.zoom;
+    let ppm = pixels_per_meter(params.zoom);
     if let Some(center) = params.center {
         return center - Vec2::new(vw / ppm / 2.0, vh / ppm / 2.0);
     }
@@ -27,7 +27,7 @@ pub fn view_corner(session: &Session, params: &ViewParams, screen_width: u32) ->
 }
 
 pub(crate) fn view_center(session: &Session, params: &ViewParams, screen_width: u32) -> Vec2 {
-    let ppm = M2P * params.zoom;
+    let ppm = pixels_per_meter(params.zoom);
     let size = Vec2::new(
         params.viewport[2] as f64 / ppm,
         params.viewport[3] as f64 / ppm,
@@ -77,7 +77,7 @@ pub(crate) fn fit_bikes(
     screen_width: u32,
     margin: f64,
 ) -> Option<(f64, Vec2)> {
-    let ppm = M2P * params.zoom;
+    let ppm = pixels_per_meter(params.zoom);
     let (vw, vh) = (params.viewport[2] as f64, params.viewport[3] as f64);
     let corner = view_corner(session, params, screen_width);
     let far = corner + Vec2::new(vw / ppm, vh / ppm);
@@ -221,8 +221,10 @@ pub fn layout_views(
     }
 }
 
+// Worked out as the game does, which at some zooms is a bit off M2P * zoom, and then puts a
+// picture or the canvas origin a pixel off where it is exactly on one
 pub fn pixels_per_meter(zoom: f64) -> f64 {
-    M2P * zoom
+    100.0 * (0.48 * zoom)
 }
 
 // Smallest and largest coordinates of a level's ground, y pointing up like the bikes

@@ -7,6 +7,8 @@ struct View {
     // Size of the view and its top left corner in the render target, in pixels
     size: vec2<f32>,
     offset: vec2<f32>,
+    // The view's bottom left pixel on the canvas, counted from the canvas origin
+    canvas_pixel: vec2<f32>,
     pixels_per_meter: f32,
     // Screen pixels per texture pixel
     texture_scale: f32,
@@ -37,6 +39,11 @@ const MODE_TEXTURE: u32 = 4u;
 const MODE_SKY: u32 = 5u;
 const MODE_AFFINE: u32 = 6u;
 
+// CanvasRect's orientation
+const ORIENT_FLIP_ROWS: u32 = 1u;
+const ORIENT_FLIP_COLUMNS: u32 = 2u;
+const ORIENT_TRANSPOSE: u32 = 4u;
+
 struct InstanceIn {
     @location(0) origin: vec2<f32>,
     @location(1) axis_u: vec2<f32>,
@@ -52,6 +59,10 @@ struct InstanceIn {
     @location(11) layer: u32,
     // image | texture << 8
     @location(12) atlas_layers: u32,
+    // Where the game puts it on the canvas, see CanvasRect
+    @location(13) rect: vec4<i32>,
+    @location(14) rounding: f32,
+    @location(15) orientation: u32,
 }
 
 struct VertexOut {
@@ -68,6 +79,9 @@ struct VertexOut {
     @location(7) @interpolate(flat) quad_origin: vec2<f32>,
     @location(8) @interpolate(flat) quad_u: vec2<f32>,
     @location(9) @interpolate(flat) quad_v: vec2<f32>,
+    @location(10) @interpolate(flat) rect: vec4<i32>,
+    @location(11) @interpolate(flat) rounding: f32,
+    @location(12) @interpolate(flat) orientation: u32,
 }
 
 fn to_clip(world: vec2<f32>, corner: vec2<f32>, depth: f32) -> vec4<f32> {
@@ -83,9 +97,20 @@ fn vs_instance(@builtin(vertex_index) vertex: u32, instance: InstanceIn) -> Vert
         vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 0.0), vec2<f32>(1.0, 1.0),
     );
     let st = corners[vertex];
-    let world = instance.origin + instance.axis_u * st.x + instance.axis_v * st.y;
+    var world = instance.origin + instance.axis_u * st.x + instance.axis_v * st.y;
     var out: VertexOut;
-    if (instance.snap == 1u) {
+    let rect = instance.rect;
+    if (rect.w < 0) {
+        // Left out at this zoom
+        out.position = vec4<f32>(2.0, 2.0, 0.0, 1.0);
+    } else if (rect.w > 0) {
+        // On the canvas's whole pixels, the rect's left column to its right and its top row
+        // down, as the game draws it at this zoom
+        let canvas = vec2<f32>(f32(rect.x) + st.x * f32(rect.z), f32(rect.y + 1) - st.y * f32(rect.w));
+        let pixels = canvas - view.canvas_pixel;
+        out.position = vec4<f32>(pixels / view.size * 2.0 - vec2<f32>(1.0, 1.0), instance.depth, 1.0);
+        world = view.canvas_origin + canvas / view.pixels_per_meter;
+    } else if (instance.snap == 1u) {
         // The level's pictures can have their edges on pixel centers, and where two meet,
         // such as grass pieces, each works its edge out a little differently. Rounded so they
         // meet exactly, and moved off the centers like the polygons, so that rounding doesn't
@@ -108,12 +133,62 @@ fn vs_instance(@builtin(vertex_index) vertex: u32, instance: InstanceIn) -> Vert
     out.quad_origin = (instance.origin - view.corner) * view.pixels_per_meter;
     out.quad_u = instance.axis_u * view.pixels_per_meter;
     out.quad_v = instance.axis_v * view.pixels_per_meter;
+    out.rect = rect;
+    out.rounding = instance.rounding;
+    out.orientation = instance.orientation;
     return out;
 }
 
 // An image's place in the atlas is its rect, x, y, width and height, and its layer
 fn atlas_texel(rect: vec4<u32>, layer: u32, x: u32, y: u32) -> u32 {
     return textureLoad(atlas, vec2<u32>(rect.x + x, rect.y + y), layer, 0).r;
+}
+
+// Where pixel i of a picture resized from `height` rows to `resized` comes from, as the game's
+// pic8::resize works it out in doubles, see resize_rounding
+fn resize_source(i: i32, height: i32, resized: i32, rounding: f32) -> i32 {
+    let p = i * height;
+    let k = div_floor(p, resized);
+    if (rounding == 0.0 || k <= 0 || k * resized != p) {
+        return k;
+    }
+    // The double below k is half as far when k is a power of two
+    var e = exp2(floor(log2(f32(k))));
+    if (e > f32(k)) {
+        e = e * 0.5;
+    } else if (e * 2.0 <= f32(k)) {
+        e = e * 2.0;
+    }
+    if ((e == f32(k) && rounding > 0.5) || (e != f32(k) && f32(k) * rounding > e)) {
+        return k - 1;
+    }
+    return k;
+}
+
+// The texel of a placed picture at this pixel, as the game's pic8::resize picks it: it
+// resizes the picture to the rect's height, and pixel i of the resized one comes from pixel
+// i * height / resized height, along the rows and the columns
+fn placed_texel(in: VertexOut) -> u32 {
+    let column = i32(floor(in.position.x - view.offset.x)) + i32(view.canvas_pixel.x);
+    let row = i32(floor(view.offset.y + view.size.y - in.position.y)) + i32(view.canvas_pixel.y);
+    let size = vec2<i32>(in.image.zw);
+    // Pixel (i, j) of the rect from its top left, flipped and turned to the resized picture's
+    var i = in.rect.y - row;
+    var j = column - in.rect.x;
+    if ((in.orientation & ORIENT_FLIP_ROWS) != 0u) {
+        i = in.rect.w - 1 - i;
+    }
+    if ((in.orientation & ORIENT_FLIP_COLUMNS) != 0u) {
+        j = in.rect.z - 1 - j;
+    }
+    if ((in.orientation & ORIENT_TRANSPOSE) != 0u) {
+        let t = i;
+        i = j;
+        j = t;
+    }
+    let x = min(resize_source(j, size.y, in.rect.w, in.rounding), size.x - 1);
+    let y = min(resize_source(i, size.y, in.rect.w, in.rounding), size.y - 1);
+    return atlas_texel(in.image, in.atlas_layers.x, u32(max(x, 0)), u32(max(y, 0)));
 }
 
 // The texel of `rect` at (s, t) in 0..1
@@ -257,7 +332,12 @@ fn shade(in: VertexOut) -> u32 {
     let mode = in.params.x;
     // Pictures, masks and recolored pictures skip their transparent pixels
     if (mode == MODE_IMAGE || mode == MODE_MASKED_TEXTURE || mode == MODE_RECOLOR) {
-        let c = image_texel(in.image, in.atlas_layers.x, in.st);
+        var c: u32;
+        if (in.rect.w > 0) {
+            c = placed_texel(in);
+        } else {
+            c = image_texel(in.image, in.atlas_layers.x, in.st);
+        }
         if (c == in.params.y) {
             discard;
         }

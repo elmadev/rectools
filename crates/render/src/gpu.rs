@@ -1,4 +1,4 @@
-use crate::instance::Instance;
+use crate::instance::{CanvasRect, Instance};
 use crate::options::{GhostStyle, RenderOptions, ViewParams};
 use crate::plan::{
     BACKGROUND_SLOT, FramePlan, HudRect, MINIMAP_BORDER_SLOT, MINIMAP_SLOT, RenderError,
@@ -36,6 +36,9 @@ pub struct Renderer {
     ghost: Option<wgpu::RenderPipeline>,
     presents: Vec<Present>,
     dynamic_buffer: wgpu::Buffer,
+    dynamic_rects: wgpu::Buffer,
+    // Each view's in turn, as many as the scene's level instances
+    level_rects: wgpu::Buffer,
     timer_buffer: wgpu::Buffer,
     frame: FramePlan,
     timing: Option<PassTiming>,
@@ -380,15 +383,23 @@ impl Renderer {
         let with_texture = pipeline_layout(&[Some(&scene_layout), Some(&texture_layout)]);
         let with_present = pipeline_layout(&[Some(&scene_layout), Some(&present_layout)]);
 
-        let instances = &[Some(wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Instance>() as u64,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &wgpu::vertex_attr_array![
-                0 => Float32x2, 1 => Float32x2, 2 => Float32x2, 3 => Float32, 4 => Uint32,
-                5 => Uint32x4, 6 => Uint32x4, 7 => Float32x2, 8 => Uint32, 9 => Uint32,
-                10 => Uint32, 11 => Uint32, 12 => Uint32
-            ],
-        })];
+        let instances = &[
+            Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<Instance>() as u64,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &wgpu::vertex_attr_array![
+                    0 => Float32x2, 1 => Float32x2, 2 => Float32x2, 3 => Float32, 4 => Uint32,
+                    5 => Uint32x4, 6 => Uint32x4, 7 => Float32x2, 8 => Uint32, 9 => Uint32,
+                    10 => Uint32, 11 => Uint32, 12 => Uint32
+                ],
+            }),
+            Some(wgpu::VertexBufferLayout {
+                // Where the game puts each, beside the instances
+                array_stride: std::mem::size_of::<CanvasRect>() as u64,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &wgpu::vertex_attr_array![13 => Sint32x4, 14 => Float32, 15 => Uint32],
+            }),
+        ];
         let polygons = &[Some(wgpu::VertexBufferLayout {
             array_stride: 8,
             step_mode: wgpu::VertexStepMode::Vertex,
@@ -462,6 +473,8 @@ impl Renderer {
 
         Renderer {
             dynamic_buffer: vertex_buffer(&device, "dynamic instances", 64 * 1024),
+            dynamic_rects: vertex_buffer(&device, "dynamic rects", 16 * 1024),
+            level_rects: vertex_buffer(&device, "level rects", 16 * 1024),
             timer_buffer: vertex_buffer(&device, "timer rects", 16 * 1024),
             device,
             queue,
@@ -831,6 +844,22 @@ impl Renderer {
         upload(
             &self.device,
             &self.queue,
+            &mut self.dynamic_rects,
+            "dynamic rects",
+            bytemuck::cast_slice(&self.frame.rects),
+        );
+        if self.frame.level_rects_changed {
+            upload(
+                &self.device,
+                &self.queue,
+                &mut self.level_rects,
+                "level rects",
+                bytemuck::cast_slice(&self.frame.level_rects),
+            );
+        }
+        upload(
+            &self.device,
+            &self.queue,
             &mut self.timer_buffer,
             "timer rects",
             bytemuck::cast_slice(&self.frame.timer),
@@ -881,6 +910,7 @@ impl Renderer {
                 [0, 0, targets.width, targets.height],
             );
             pass.set_vertex_buffer(0, self.dynamic_buffer.slice(..));
+            pass.set_vertex_buffer(1, self.dynamic_rects.slice(..));
             if let Some(background) = background {
                 pass.set_pipeline(&self.fill);
                 pass.set_stencil_reference(0);
@@ -894,6 +924,7 @@ impl Renderer {
                     pass.draw(0..s.polygon_vertices.len() as u32, 0..1);
                 }
                 pass.set_vertex_buffer(0, self.dynamic_buffer.slice(..));
+                pass.set_vertex_buffer(1, self.dynamic_rects.slice(..));
                 pass.set_pipeline(&self.fill);
                 pass.set_stencil_reference(0);
                 pass.draw(0..6, draw.ground_fill.clone());
@@ -904,6 +935,8 @@ impl Renderer {
                 pass.draw(0..6, draw.sky_fill.clone());
                 if let (Some(instances), Some(p)) = (&scene.instances, s.pictures()) {
                     pass.set_vertex_buffer(0, instances.slice(..));
+                    let rects = (i * p.instances.len() * std::mem::size_of::<CanvasRect>()) as u64;
+                    pass.set_vertex_buffer(1, self.level_rects.slice(rects..));
                     pass.set_pipeline(&self.sprite_clipped);
                     pass.set_stencil_reference(0);
                     pass.draw(0..6, p.ground.clone());
@@ -931,6 +964,7 @@ impl Renderer {
                 _ => &self.dynamic,
             };
             pass.set_vertex_buffer(0, self.dynamic_buffer.slice(..));
+            pass.set_vertex_buffer(1, self.dynamic_rects.slice(..));
             pass.set_bind_group(1, &targets.layers_group, &[]);
             for (i, (params, draw)) in views.iter().zip(draws).enumerate() {
                 set_view(&mut pass, i, params.viewport);
@@ -962,6 +996,7 @@ impl Renderer {
                     continue;
                 };
                 pass.set_vertex_buffer(0, self.dynamic_buffer.slice(..));
+                pass.set_vertex_buffer(1, self.dynamic_rects.slice(..));
                 set_view(&mut pass, MINIMAP_BORDER_SLOT + i, m.border);
                 pass.set_pipeline(&self.fill);
                 pass.set_stencil_reference(0);
@@ -972,6 +1007,7 @@ impl Renderer {
                     pass.set_vertex_buffer(0, polygons.slice(..));
                     pass.draw(0..s.polygon_vertices.len() as u32, 0..1);
                     pass.set_vertex_buffer(0, self.dynamic_buffer.slice(..));
+                    pass.set_vertex_buffer(1, self.dynamic_rects.slice(..));
                 }
                 pass.set_pipeline(&self.fill);
                 pass.set_stencil_reference(0);

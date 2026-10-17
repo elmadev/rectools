@@ -8,6 +8,8 @@
   changes.
 - `zoomTextures`, and a setting for it: off keeps the ground, sky and grass textures at their
   size at zoom 1, like elma-classic's "Zoom Textures" off.
+- Pictures and objects are drawn as the game draws them at any zoom, where they were a pixel
+  or so off at zooms that aren't whole numbers.
 - Frames take less of the GPU to draw, most on high-resolution screens and when zoomed.
 - Replays and levels open faster, and so do changes to the grass, pictures, sky and fancyboost.
 - `ghosts` given as a new array of the same replays, as `ghosts={[...]}` does on every render,
