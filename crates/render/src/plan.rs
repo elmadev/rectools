@@ -96,6 +96,9 @@ pub struct FramePlan {
     pub(crate) uniforms: Vec<u8>,
     pub(crate) instances: Vec<Instance>,
     pub(crate) timer: Vec<HudRect>,
+    // The part of the target the timer's pixels are worked out from, as x, y, width and
+    // height from the top left: only it is copied for the timer pass to read
+    pub(crate) timer_copy: Option<[u32; 4]>,
     pub(crate) views: Vec<ViewDraw>,
     // The instance of the frame behind the views
     pub(crate) background: u32,
@@ -139,6 +142,35 @@ fn view_uniform(
         game_textures: (textures == TextureZoom::Game) as u32,
         _pad: 0,
     }
+}
+
+// The bounding box in the target of the rects drawn in TIMER_COLOR, the only ones that read
+// what is under them
+fn timer_copy_bounds(
+    rects: &[HudRect],
+    views: &[ViewParams],
+    draws: &[ViewDraw],
+    (width, height): (u32, u32),
+) -> Option<[u32; 4]> {
+    let mut bounds: Option<[f32; 4]> = None;
+    for (params, draw) in views.iter().zip(draws) {
+        let [vx, vy, _, vh] = params.viewport.map(|v| v as f32);
+        for r in &rects[draw.timer.start as usize..draw.timer.end as usize] {
+            if r.color != TIMER_COLOR {
+                continue;
+            }
+            let [x, y, w, h] = r.rect;
+            // From the view's bottom left to the target's top left
+            let (left, top) = (vx + x, vy + vh - (y + h));
+            let b = bounds.get_or_insert([left, top, left + w, top + h]);
+            *b = [b[0].min(left), b[1].min(top), b[2].max(left + w), b[3].max(top + h)];
+        }
+    }
+    let [left, top, right, bottom] = bounds?;
+    let clamp = |v: f32, max: u32| (v.max(0.0) as u32).min(max);
+    let (x0, y0) = (clamp(left.floor(), width), clamp(top.floor(), height));
+    let (x1, y1) = (clamp(right.ceil(), width), clamp(bottom.ceil(), height));
+    (x1 > x0 && y1 > y0).then_some([x0, y0, x1 - x0, y1 - y0])
 }
 
 // Works out a frame of `views` of `scene` into `frame`, whose buffers are reused
@@ -359,6 +391,7 @@ pub fn plan(
     );
 
     frame.background = background;
+    frame.timer_copy = timer_copy_bounds(&frame.timer, views, &frame.views, (width, height));
     Ok(())
 }
 
@@ -544,6 +577,29 @@ mod tests {
             u.offset[1]
         };
         assert_eq!((offset_y(0), offset_y(1)), (0.0, 240.0));
+    }
+
+    #[test]
+    fn only_the_timers_are_copied_for_the_timer_pass() {
+        let (scene, session) = setup(0);
+        assert_eq!(planned(&scene, &session, &[view(0, false, false)]).timer_copy, None);
+        let mut top = view(0, true, false);
+        top.viewport = [0, 0, 640, 240];
+        let mut bottom = top;
+        bottom.viewport = [0, 240, 640, 240];
+        let frame = planned(&scene, &session, &[top, bottom]);
+        let [x, y, w, h] = frame.timer_copy.unwrap();
+        assert!(w * h < 640 * 480 / 4, "{w}x{h}");
+        // Every timer pixel of both views, in the target from its top left
+        for (params, draw) in [top, bottom].iter().zip(&frame.views) {
+            let [vx, vy, _, vh] = params.viewport.map(|v| v as f32);
+            for r in &frame.timer[draw.timer.start as usize..draw.timer.end as usize] {
+                let [rx, ry, rw, rh] = r.rect;
+                let (left, top) = (vx + rx, vy + vh - (ry + rh));
+                assert!(left >= x as f32 && left + rw <= (x + w) as f32, "{r:?}");
+                assert!(top >= y as f32 && top + rh <= (y + h) as f32, "{r:?}");
+            }
+        }
     }
 
     #[test]

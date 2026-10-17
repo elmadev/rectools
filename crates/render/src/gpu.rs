@@ -915,15 +915,24 @@ impl Renderer {
         }
 
         if draws.iter().any(|d| !d.timer.is_empty()) {
-            encoder.copy_texture_to_texture(
-                targets.index.as_image_copy(),
-                targets.copy.as_image_copy(),
-                wgpu::Extent3d {
-                    width: targets.width,
-                    height: targets.height,
-                    depth_or_array_layers: 1,
-                },
-            );
+            if let Some([x, y, width, height]) = self.frame.timer_copy {
+                let origin = wgpu::Origin3d { x, y, z: 0 };
+                encoder.copy_texture_to_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        origin,
+                        ..targets.index.as_image_copy()
+                    },
+                    wgpu::TexelCopyTextureInfo {
+                        origin,
+                        ..targets.copy.as_image_copy()
+                    },
+                    wgpu::Extent3d {
+                        width,
+                        height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("timer"),
                 color_attachments: &[color(&targets.index_view, wgpu::LoadOp::Load)],
