@@ -15,7 +15,7 @@ use elma_formats::lev::{Level, internal_level_file};
 use elma_formats::lgr::Lgr;
 use elma_formats::pic::{Pic8, decode_shirt};
 use elma_formats::rec::{Rec, Ride};
-use elma_formats::res::Res;
+use elma_formats::res::{Res, ResFile};
 use replay::Settings;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -39,7 +39,7 @@ pub struct GameFolder {
 }
 
 enum Game {
-    Elma(Vec<u8>),
+    Elma(ResFile),
     Across(across::Files, OnceLock<Result<Arc<AcrossGraphics>, Error>>),
 }
 
@@ -94,8 +94,7 @@ impl GameFolder {
         let path = find_file(&dir, "elma.res").ok_or_else(|| {
             not_found(FileKind::ElmaRes, format!("elma.res in {}", dir.display()))
         })?;
-        let res = read(&path)?;
-        Res::parse(&res).map_err(format(FileKind::ElmaRes, &path))?;
+        let res = ResFile::parse(read(&path)?).map_err(format(FileKind::ElmaRes, &path))?;
         Ok(GameFolder {
             dir,
             game: Game::Elma(res),
@@ -121,16 +120,14 @@ impl GameFolder {
     // A file of the game: from elma.res, or Across's files
     pub fn file(&self, name: &str) -> Option<Vec<u8>> {
         match &self.game {
-            Game::Elma(res) => Res::parse(res).ok()?.get(name).map(<[u8]>::to_vec),
+            Game::Elma(res) => res.res().get(name).map(<[u8]>::to_vec),
             Game::Across(files, _) => files.get(name),
         }
     }
 
     fn res(&self) -> Result<Res<'_>, Error> {
         match &self.game {
-            Game::Elma(res) => {
-                Ok(Res::parse(res).expect("elma.res was checked when the folder was opened"))
-            }
+            Game::Elma(res) => Ok(res.res()),
             Game::Across(..) => Err(Error::WrongGame {
                 folder: "Across",
                 wanted: "Elma",

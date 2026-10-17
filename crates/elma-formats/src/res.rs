@@ -1,5 +1,6 @@
 use crate::reader::{Reader, cstr, xor_decrypt};
 use crate::{Error, invalid};
+use std::borrow::Cow;
 
 const MAGIC_NUMBER: i32 = 1347839;
 const MAX_FILES_LEGACY: usize = 150;
@@ -10,10 +11,42 @@ const ELMA_KEY: (i16, i16, i16) = (23, 9982, 3391);
 // across.res: a different key, and each entry has its offset before its length
 const ACROSS_KEY: (i16, i16, i16) = (23, 9782, 3391);
 
+// A file's name, offset and length
+type Entry = (String, usize, usize);
+
 // The encrypted archive (elma.res) holding the game's sounds and internal levels
 pub struct Res<'a> {
     data: &'a [u8],
-    entries: Vec<(String, usize, usize)>,
+    entries: Cow<'a, [Entry]>,
+}
+
+// An archive with its table of files read once, for taking many files from: reading it
+// decrypts the table
+pub struct ResFile {
+    data: Vec<u8>,
+    entries: Vec<Entry>,
+}
+
+impl ResFile {
+    pub fn parse(data: Vec<u8>) -> Result<ResFile, Error> {
+        Self::parse_with(data, false)
+    }
+
+    pub fn parse_across(data: Vec<u8>) -> Result<ResFile, Error> {
+        Self::parse_with(data, true)
+    }
+
+    fn parse_with(data: Vec<u8>, across: bool) -> Result<ResFile, Error> {
+        let entries = Res::parse_with(&data, across)?.entries.into_owned();
+        Ok(ResFile { data, entries })
+    }
+
+    pub fn res(&self) -> Res<'_> {
+        Res {
+            data: &self.data,
+            entries: Cow::Borrowed(&self.entries),
+        }
+    }
 }
 
 impl<'a> Res<'a> {
@@ -70,7 +103,10 @@ impl<'a> Res<'a> {
             }
             entries.push((name, offset as usize, length as usize));
         }
-        Ok(Res { data, entries })
+        Ok(Res {
+            data,
+            entries: Cow::Owned(entries),
+        })
     }
 
     pub fn names(&self) -> impl Iterator<Item = &str> {
@@ -132,5 +168,7 @@ mod tests {
         assert!(
             Res::parse(&data).is_err() || Res::parse(&data).unwrap().get("leir1.lei").is_none()
         );
+        let file = ResFile::parse_across(data).unwrap();
+        assert_eq!(file.res().get("leir1.LEI"), Some(&b"hello"[..]));
     }
 }

@@ -6,18 +6,18 @@ use elma_formats::across::rec::AcrossRec;
 use elma_formats::across::table::{self, EXTERNAL_DESCRIPTOR};
 use elma_formats::across::{level_from_lev, txt};
 use elma_formats::lev::{Level, ObjectType};
-use elma_formats::res::Res;
+use elma_formats::res::ResFile;
 use replay::{Game, Settings};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 // The game's own files: an across.res, the original game's or the pack the web player is given
-pub struct Files(Vec<u8>);
+pub struct Files(ResFile);
 
 impl Files {
     pub fn res(data: Vec<u8>) -> Result<Files, Error> {
-        Res::parse_across(&data).map_err(format(FileKind::AcrossRes, "across.res"))?;
-        Ok(Files(data))
+        let res = ResFile::parse_across(data).map_err(format(FileKind::AcrossRes, "across.res"))?;
+        Ok(Files(res))
     }
 
     // The across.res of the game folder `dir`, which also holds rec/ and lev/
@@ -28,16 +28,13 @@ impl Files {
                 format!("across.res in {}", dir.display()),
             )
         })?;
-        let data = read(&path)?;
-        Res::parse_across(&data).map_err(format(FileKind::AcrossRes, &path))?;
-        Ok(Files(data))
+        let res =
+            ResFile::parse_across(read(&path)?).map_err(format(FileKind::AcrossRes, &path))?;
+        Ok(Files(res))
     }
 
     pub fn get(&self, name: &str) -> Option<Vec<u8>> {
-        Res::parse_across(&self.0)
-            .ok()?
-            .get(name)
-            .map(<[u8]>::to_vec)
+        self.0.res().get(name).map(<[u8]>::to_vec)
     }
 
     pub fn graphics(&self) -> Result<AcrossGraphics, Error> {
