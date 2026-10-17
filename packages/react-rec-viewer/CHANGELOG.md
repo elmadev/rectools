@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The position slider spans the whole player, above the buttons.
+
 ## 0.1.8 - 2026-10-14
 
 - Grass and ground no longer shimmer when the camera moves on a scaled screen or when

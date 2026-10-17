@@ -90,14 +90,15 @@ function Icon({ name }: { name: keyof typeof ICONS }) {
 const bar: CSSProperties = {
   position: "relative",
   display: "flex",
-  flexWrap: "wrap",
-  gap: 4,
-  alignItems: "center",
+  flexDirection: "column",
+  gap: 2,
   padding: "4px 6px",
   font: "13px system-ui, sans-serif",
   background: "#1b1b1b",
   color: "#eee",
 };
+
+const buttons: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" };
 
 const buttonStyle: CSSProperties = {
   font: "inherit",
@@ -335,86 +336,91 @@ export function Controls(p: ControlsProps) {
           <Settings {...p} />
         </div>
       )}
+      {/* The whole width, so a long replay can be found to the second */}
       {!p.levelOnly && (
-        <>
-          <Button label={p.playing ? "Pause" : "Play"} onClick={p.onTogglePlay} disabled={disabled}>
-            <Icon name={p.playing ? "pause" : "play"} />
-          </Button>
-          <input
-            ref={p.scrubRef}
-            type="range"
-            min={0}
-            max={p.duration || 0}
-            step={0.01}
-            defaultValue={0}
-            disabled={disabled}
-            aria-label="Position"
-            onPointerDown={() => (p.scrubbing.current = true)}
-            onPointerUp={() => (p.scrubbing.current = false)}
-            onPointerCancel={() => (p.scrubbing.current = false)}
-            onInput={(e) => p.onSeek(Number(e.currentTarget.value))}
-            style={{ flex: "1 1 120px", minWidth: 80, touchAction: "none", accentColor: "#0075ff" }}
-          />
-          <span style={numbers}>
-            <span ref={p.timeRef}>{formatTime(0)}</span> / {formatTime(p.duration)}
-          </span>
-          <Button label="Slower" onClick={p.onSlower} disabled={disabled}>
-            <Icon name="slower" />
-          </Button>
-          <span style={{ ...numbers, minWidth: 42, textAlign: "center" }} title="Speed">
-            {formatSpeed(p.speed)}
-          </span>
-          <Button label="Faster" onClick={p.onFaster} disabled={disabled}>
-            <Icon name="faster" />
-          </Button>
-          <Button label="Reverse" onClick={p.onReverse} disabled={disabled} pressed={p.speed < 0}>
-            <Icon name="reverse" />
-          </Button>
-        </>
+        <input
+          ref={p.scrubRef}
+          type="range"
+          min={0}
+          max={p.duration || 0}
+          step={0.01}
+          defaultValue={0}
+          disabled={disabled}
+          aria-label="Position"
+          onPointerDown={() => (p.scrubbing.current = true)}
+          onPointerUp={() => (p.scrubbing.current = false)}
+          onPointerCancel={() => (p.scrubbing.current = false)}
+          onInput={(e) => p.onSeek(Number(e.currentTarget.value))}
+          style={{ width: "100%", margin: "4px 0", touchAction: "none", accentColor: "#0075ff" }}
+        />
       )}
-      {p.levelOnly && <span style={{ flex: 1 }} />}
-      {p.bikeCount > 1 && (
-        <select
-          aria-label="Follow"
-          title="Follow"
-          value={p.follow}
-          onChange={(e) => p.onFollow(Number(e.target.value))}
-          style={{ ...buttonStyle, maxWidth: 220 }}
-        >
-          {Array.from({ length: p.bikeCount }, (_, i) => (
-            <option key={i} value={i}>
-              {p.bikeLabels[i]}
-            </option>
-          ))}
-        </select>
-      )}
-      <Button label="Zoom out" onClick={p.onZoomOut} disabled={disabled}>
-        <Icon name="minus" />
-      </Button>
-      <span style={{ ...numbers, minWidth: 40, textAlign: "center" }} title="Zoom">
-        {p.zoom.toFixed(2)}x
-      </span>
-      <Button label="Zoom in" onClick={p.onZoomIn} disabled={disabled}>
-        <Icon name="plus" />
-      </Button>
-      {p.levelOnly && (
-        <Button label="Show the whole level" onClick={p.onFitLevel} disabled={disabled}>
-          <Icon name="fit" />
+      <div style={buttons}>
+        {!p.levelOnly && (
+          <>
+            <Button label={p.playing ? "Pause" : "Play"} onClick={p.onTogglePlay} disabled={disabled}>
+              <Icon name={p.playing ? "pause" : "play"} />
+            </Button>
+            <span style={numbers}>
+              <span ref={p.timeRef}>{formatTime(0)}</span> / {formatTime(p.duration)}
+            </span>
+            <Button label="Slower" onClick={p.onSlower} disabled={disabled}>
+              <Icon name="slower" />
+            </Button>
+            <span style={{ ...numbers, minWidth: 42, textAlign: "center" }} title="Speed">
+              {formatSpeed(p.speed)}
+            </span>
+            <Button label="Faster" onClick={p.onFaster} disabled={disabled}>
+              <Icon name="faster" />
+            </Button>
+            <Button label="Reverse" onClick={p.onReverse} disabled={disabled} pressed={p.speed < 0}>
+              <Icon name="reverse" />
+            </Button>
+          </>
+        )}
+        <span style={{ flex: 1 }} />
+        {p.bikeCount > 1 && (
+          <select
+            aria-label="Follow"
+            title="Follow"
+            value={p.follow}
+            onChange={(e) => p.onFollow(Number(e.target.value))}
+            style={{ ...buttonStyle, maxWidth: 220 }}
+          >
+            {Array.from({ length: p.bikeCount }, (_, i) => (
+              <option key={i} value={i}>
+                {p.bikeLabels[i]}
+              </option>
+            ))}
+          </select>
+        )}
+        <Button label="Zoom out" onClick={p.onZoomOut} disabled={disabled}>
+          <Icon name="minus" />
         </Button>
-      )}
-      <Button
-        label="Settings"
-        onClick={() => {
-          if (!settingsOpen) p.onSettingsOpen?.();
-          setSettingsOpen(!settingsOpen);
-        }}
-        pressed={settingsOpen}
-      >
-        <Icon name="settings" />
-      </Button>
-      <Button label={p.fullscreen ? "Exit full screen" : "Full screen"} onClick={p.onFullscreen}>
-        <Icon name={p.fullscreen ? "exitFullscreen" : "fullscreen"} />
-      </Button>
+        <span style={{ ...numbers, minWidth: 40, textAlign: "center" }} title="Zoom">
+          {p.zoom.toFixed(2)}x
+        </span>
+        <Button label="Zoom in" onClick={p.onZoomIn} disabled={disabled}>
+          <Icon name="plus" />
+        </Button>
+        {p.levelOnly && (
+          <Button label="Show the whole level" onClick={p.onFitLevel} disabled={disabled}>
+            <Icon name="fit" />
+          </Button>
+        )}
+        <Button
+          label="Settings"
+          onClick={() => {
+            if (!settingsOpen) p.onSettingsOpen?.();
+            setSettingsOpen(!settingsOpen);
+          }}
+          pressed={settingsOpen}
+        >
+          <Icon name="settings" />
+        </Button>
+        <Button label={p.fullscreen ? "Exit full screen" : "Full screen"} onClick={p.onFullscreen}>
+          <Icon name={p.fullscreen ? "exitFullscreen" : "fullscreen"} />
+        </Button>
+      </div>
     </div>
   );
 }
