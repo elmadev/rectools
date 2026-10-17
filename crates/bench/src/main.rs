@@ -26,6 +26,7 @@ Options:
   --zoom <z>          zoom (default: 1)
   --frames <n>        stop after n frames
   --auto-zoom         zoom to fit every bike, like recview's auto zoom
+  --passes            also time each pass on the GPU, where it can
 ";
 
 struct Options {
@@ -37,6 +38,7 @@ struct Options {
     zoom: f64,
     frames: Option<usize>,
     auto_zoom: bool,
+    passes: bool,
 }
 
 fn parse() -> Result<Options, String> {
@@ -49,6 +51,7 @@ fn parse() -> Result<Options, String> {
         zoom: 1.0,
         frames: None,
         auto_zoom: false,
+        passes: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -82,6 +85,7 @@ fn parse() -> Result<Options, String> {
                 );
             }
             "--auto-zoom" => opts.auto_zoom = true,
+            "--passes" => opts.passes = true,
             "-h" | "--help" => {
                 print!("{USAGE}");
                 std::process::exit(0);
@@ -143,6 +147,10 @@ fn run(opts: &Options) -> Result<(), String> {
     let (mut renderer, adapter) = pollster::block_on(Renderer::request(&instance, None, "bench"))
         .map_err(|e| e.to_string())?;
     let gpu_time = t.elapsed();
+    let timing = opts.passes && renderer.enable_pass_timing();
+    if opts.passes && !timing {
+        eprintln!("bench: this GPU can't time passes");
+    }
 
     let t = Instant::now();
     let ghosts = loaded.ghosts();
@@ -204,6 +212,8 @@ fn run(opts: &Options) -> Result<(), String> {
     let mut cpu = Vec::new();
     let mut total = Vec::new();
     let mut first_frame = None;
+    // Each pass's times, in the order the passes first came
+    let mut passes: Vec<(&'static str, Vec<Duration>)> = Vec::new();
     loop {
         if opts.frames.is_some_and(|n| total.len() >= n) {
             break;
@@ -240,6 +250,16 @@ fn run(opts: &Options) -> Result<(), String> {
             .poll(wgpu::PollType::wait_indefinitely())
             .map_err(|e| e.to_string())?;
         let done = frame_start.elapsed();
+        // The first frame is left out below, so its passes are too
+        if timing && first_frame.is_some() {
+            for (name, ms) in renderer.pass_times().unwrap_or_default() {
+                let time = Duration::from_secs_f64(ms / 1000.0);
+                match passes.iter_mut().find(|(n, _)| *n == name) {
+                    Some((_, times)) => times.push(time),
+                    None => passes.push((name, vec![Duration::ZERO, time])),
+                }
+            }
+        }
         first_frame.get_or_insert(done);
         cpu.push(cpu_done);
         total.push(done);
@@ -272,21 +292,35 @@ fn run(opts: &Options) -> Result<(), String> {
         println!("Too few frames to time");
         return Ok(());
     }
-    let report = |name: &str, times: &[Duration]| {
+    // Frames also show how many a second that is
+    let report = |name: &str, times: &[Duration], frames: bool| {
         let mut sorted: Vec<f64> = times[1..].iter().map(|&d| ms(d)).collect();
         sorted.sort_by(f64::total_cmp);
         let pct = |p: f64| sorted[((sorted.len() - 1) as f64 * p).round() as usize];
         let mean = sorted.iter().sum::<f64>() / sorted.len() as f64;
+        let fps = if frames {
+            format!("  ({:.0} fps)", 1000.0 / mean)
+        } else {
+            String::new()
+        };
         println!(
-            "{name:<10} mean {mean:6.3}  p50 {:6.3}  p99 {:6.3}  max {:6.3} ms  ({:.0} fps)",
+            "{name:<12} mean {mean:6.3}  p50 {:6.3}  p99 {:6.3}  max {:6.3} ms{fps}",
             pct(0.5),
             pct(0.99),
             sorted[sorted.len() - 1],
-            1000.0 / mean,
         );
     };
     println!("{} frames", total.len() - 1);
-    report("CPU", &cpu);
-    report("CPU+GPU", &total);
+    report("CPU", &cpu, true);
+    report("CPU+GPU", &total, true);
+    if !passes.is_empty() {
+        // A tiled GPU, like Apple's, starts a pass before the one before it ends, so these
+        // overlap and can add up to more than the frame
+        println!();
+        println!("GPU passes, from start to end:");
+        for (name, times) in &passes {
+            report(name, times, false);
+        }
+    }
     Ok(())
 }

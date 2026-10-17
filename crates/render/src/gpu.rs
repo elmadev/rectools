@@ -39,6 +39,19 @@ pub struct Renderer {
     dynamic_buffer: wgpu::Buffer,
     timer_buffer: wgpu::Buffer,
     frame: FramePlan,
+    timing: Option<PassTiming>,
+}
+
+// At most this many passes a frame
+const MAX_PASSES: u32 = 8;
+
+// GPU timestamps at the start and end of each pass, for profiling
+struct PassTiming {
+    queries: wgpu::QuerySet,
+    resolve: wgpu::Buffer,
+    readback: wgpu::Buffer,
+    // The last frame's passes, in order
+    passes: Vec<&'static str>,
 }
 
 pub struct GpuScene {
@@ -304,6 +317,8 @@ impl Renderer {
                 label: Some(label),
                 required_limits: wgpu::Limits::downlevel_webgl2_defaults()
                     .using_resolution(adapter.limits()),
+                // For pass timing, when asked for
+                required_features: adapter.features() & wgpu::Features::TIMESTAMP_QUERY,
                 ..Default::default()
             })
             .await?;
@@ -500,7 +515,66 @@ impl Renderer {
             timer,
             presents: Vec::new(),
             frame: FramePlan::default(),
+            timing: None,
         }
+    }
+
+    // Times each pass of the frames that follow on the GPU, for pass_times. False when the
+    // device can't.
+    pub fn enable_pass_timing(&mut self) -> bool {
+        if !self
+            .device
+            .features()
+            .contains(wgpu::Features::TIMESTAMP_QUERY)
+        {
+            return false;
+        }
+        let size = MAX_PASSES as u64 * 2 * 8;
+        let buffer = |label, usage| {
+            self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size,
+                usage,
+                mapped_at_creation: false,
+            })
+        };
+        use wgpu::BufferUsages as B;
+        self.timing = Some(PassTiming {
+            queries: self.device.create_query_set(&wgpu::QuerySetDescriptor {
+                label: Some("pass times"),
+                ty: wgpu::QueryType::Timestamp,
+                count: MAX_PASSES * 2,
+            }),
+            resolve: buffer("pass times", B::QUERY_RESOLVE | B::COPY_SRC),
+            readback: buffer("pass times readback", B::MAP_READ | B::COPY_DST),
+            passes: Vec::new(),
+        });
+        true
+    }
+
+    // How long each pass of the last frame took on the GPU, in milliseconds, once enabled.
+    // Waits for the GPU to finish the frame.
+    pub fn pass_times(&self) -> Option<Vec<(&'static str, f64)>> {
+        let timing = self.timing.as_ref()?;
+        let slice = timing.readback.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        self.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
+        let period = self.queue.get_timestamp_period() as f64;
+        let times = {
+            let data = slice.get_mapped_range().ok()?;
+            let ticks: &[u64] = bytemuck::cast_slice(&data);
+            timing
+                .passes
+                .iter()
+                .enumerate()
+                .map(|(i, &name)| {
+                    let ticks = ticks[2 * i + 1].saturating_sub(ticks[2 * i]);
+                    (name, ticks as f64 * period / 1e6)
+                })
+                .collect()
+        };
+        timing.readback.unmap();
+        Some(times)
     }
 
     pub fn device(&self) -> &wgpu::Device {
@@ -801,10 +875,23 @@ impl Renderer {
             );
         };
         let clear = wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT);
+        let mut passes = Vec::new();
+        let timing = self.timing.as_ref();
+        let mut timestamps = |name| {
+            let t = timing?;
+            let i = passes.len() as u32;
+            passes.push(name);
+            Some(wgpu::RenderPassTimestampWrites {
+                query_set: &t.queries,
+                beginning_of_pass_write_index: Some(2 * i),
+                end_of_pass_write_index: Some(2 * i + 1),
+            })
+        };
 
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("level"),
+                timestamp_writes: timestamps("level"),
                 color_attachments: &[
                     color(&targets.index_view, clear),
                     color(&targets.layer_view, clear),
@@ -852,6 +939,7 @@ impl Renderer {
         if !on_top {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("front grass"),
+                timestamp_writes: timestamps("front grass"),
                 depth_stencil_attachment: Some(depth_attachment(&targets.depth_view, false)),
                 ..Default::default()
             });
@@ -866,6 +954,7 @@ impl Renderer {
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("bikes"),
+                timestamp_writes: timestamps("bikes"),
                 color_attachments: &[
                     color(&targets.index_view, wgpu::LoadOp::Load),
                     // Only read by the present pass when there are translucent ghosts
@@ -895,6 +984,7 @@ impl Renderer {
             // Its own stencil and depth: the level and bikes are done with theirs
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("minimap"),
+                timestamp_writes: timestamps("minimap"),
                 color_attachments: &[
                     color(&targets.index_view, wgpu::LoadOp::Load),
                     color(&targets.layer_view, wgpu::LoadOp::Load),
@@ -949,6 +1039,7 @@ impl Renderer {
             }
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("timer"),
+                timestamp_writes: timestamps("timer"),
                 color_attachments: &[color(&targets.index_view, wgpu::LoadOp::Load)],
                 ..Default::default()
             });
@@ -964,6 +1055,7 @@ impl Renderer {
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("present"),
+                timestamp_writes: timestamps("present"),
                 color_attachments: &[color(output.view, wgpu::LoadOp::Clear(wgpu::Color::BLACK))],
                 ..Default::default()
             });
@@ -978,6 +1070,12 @@ impl Renderer {
             pass.draw(0..3, 0..1);
         }
 
+        if let Some(t) = &mut self.timing {
+            let count = passes.len() as u32 * 2;
+            encoder.resolve_query_set(&t.queries, 0..count, &t.resolve, 0);
+            encoder.copy_buffer_to_buffer(&t.resolve, 0, &t.readback, 0, count as u64 * 8);
+            t.passes = passes;
+        }
         self.queue.submit([encoder.finish()]);
         Ok(())
     }
