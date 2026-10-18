@@ -120,9 +120,9 @@ fn instance_position(st: vec2<f32>, instance: InstanceIn) -> vec4<f32> {
     return to_clip(world, corner, instance.depth);
 }
 
-const QUAD_CORNERS = array<vec2<f32>, 6>(
-    vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 0.0), vec2<f32>(0.0, 1.0),
-    vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 0.0), vec2<f32>(1.0, 1.0),
+// A quad's corners, drawn as the triangles 0 1 2 and 2 1 3 (QUAD_INDICES)
+const QUAD_CORNERS = array<vec2<f32>, 4>(
+    vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 0.0), vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 1.0),
 );
 
 @vertex
@@ -240,11 +240,7 @@ struct FillOut {
 
 @vertex
 fn vs_fill(@builtin(vertex_index) vertex: u32, instance: InstanceIn) -> FillOut {
-    var corners = array<vec2<f32>, 6>(
-        vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 0.0), vec2<f32>(0.0, 1.0),
-        vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 0.0), vec2<f32>(1.0, 1.0),
-    );
-    let st = corners[vertex];
+    let st = QUAD_CORNERS[vertex];
     let world = instance.origin + instance.axis_u * st.x + instance.axis_v * st.y;
     var out: FillOut;
     if (instance.snap == 1u) {
@@ -789,12 +785,8 @@ fn vs_timer(
     @location(0) rect: vec4<f32>,
     @location(1) color: u32,
 ) -> HudOut {
-    var corners = array<vec2<f32>, 6>(
-        vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 0.0), vec2<f32>(0.0, 1.0),
-        vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 0.0), vec2<f32>(1.0, 1.0),
-    );
     // rect is x, y, width, height in target pixels from the bottom left
-    let pixels = rect.xy + corners[vertex] * rect.zw;
+    let pixels = rect.xy + QUAD_CORNERS[vertex] * rect.zw;
     var out: HudOut;
     out.position = vec4<f32>(pixels / view.size * 2.0 - vec2<f32>(1.0, 1.0), 0.0, 1.0);
     out.color = color;

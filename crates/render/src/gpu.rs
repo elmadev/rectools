@@ -25,6 +25,7 @@ pub struct Renderer {
     queue: wgpu::Queue,
     // A pixel of no translucent ghost, for the present pass of frames without them
     no_ghosts: wgpu::Texture,
+    quad_indices: wgpu::Buffer,
     shader: wgpu::ShaderModule,
     uniforms: wgpu::Buffer,
     scene_layout: wgpu::BindGroupLayout,
@@ -250,11 +251,16 @@ fn depth_attachment(view: &wgpu::TextureView) -> wgpu::RenderPassDepthStencilAtt
 }
 
 // A quad for each instance. WebGPU warns about a draw of no instances, so those are left out.
+// Each instance's quad, as two triangles of its four corners, which the GPU then works out
+// once each rather than six times. The pass has QUAD_INDICES bound.
 fn draw_quads(pass: &mut wgpu::RenderPass, instances: std::ops::Range<u32>) {
     if !instances.is_empty() {
-        pass.draw(0..6, instances);
+        pass.draw_indexed(0..6, 0, instances);
     }
 }
+
+// The quad's corners in QUAD_CORNERS: the triangles 0 1 2 and 2 1 3
+const QUAD_INDICES: [u16; 6] = [0, 1, 2, 2, 1, 3];
 
 fn color(
     view: &wgpu::TextureView,
@@ -563,8 +569,16 @@ impl Renderer {
                 depth_or_array_layers: 1,
             },
         );
+        let quad_indices = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("quad indices"),
+            size: std::mem::size_of_val(&QUAD_INDICES) as u64,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&quad_indices, 0, bytemuck::cast_slice(&QUAD_INDICES));
         Renderer {
             no_ghosts,
+            quad_indices,
             fill_maps,
             fill_map_group,
             dynamic_buffer: vertex_buffer(&device, "dynamic instances", 64 * 1024),
@@ -1122,6 +1136,7 @@ impl Renderer {
                 depth_stencil_attachment: Some(depth_attachment(&targets.depth_view)),
                 ..Default::default()
             });
+            pass.set_index_buffer(self.quad_indices.slice(..), wgpu::IndexFormat::Uint16);
             pass.set_bind_group(1, &self.fill_map_group, &[]);
             set_view(
                 &mut pass,
@@ -1133,7 +1148,7 @@ impl Renderer {
             if let Some(background) = background {
                 pass.set_pipeline(&self.fill);
                 pass.set_stencil_reference(0);
-                pass.draw(0..6, background..background + 1);
+                draw_quads(&mut pass, background..background + 1);
             }
             for (i, (params, draw)) in views.iter().zip(draws).enumerate() {
                 set_view(&mut pass, i, params.viewport);
@@ -1187,6 +1202,7 @@ impl Renderer {
                 ],
                 ..Default::default()
             });
+            pass.set_index_buffer(self.quad_indices.slice(..), wgpu::IndexFormat::Uint16);
             let ghost = match (options.ghosts, &self.ghost) {
                 (GhostStyle::Translucent, Some(ghost)) => ghost,
                 _ => &self.dynamic,
@@ -1219,6 +1235,7 @@ impl Renderer {
                 depth_stencil_attachment: Some(depth_attachment(&targets.depth_view)),
                 ..Default::default()
             });
+            pass.set_index_buffer(self.quad_indices.slice(..), wgpu::IndexFormat::Uint16);
             pass.set_bind_group(1, &self.fill_map_group, &[]);
             for (i, draw) in draws.iter().enumerate() {
                 let Some(m) = &draw.minimap else {
@@ -1229,7 +1246,7 @@ impl Renderer {
                 set_view(&mut pass, MINIMAP_BORDER_SLOT + i, m.border);
                 pass.set_pipeline(&self.fill);
                 pass.set_stencil_reference(0);
-                pass.draw(0..6, m.fills..m.fills + 1);
+                draw_quads(&mut pass, m.fills..m.fills + 1);
                 set_view(&mut pass, MINIMAP_SLOT + i, m.inner);
                 if let Some(polygons) = &scene.polygons {
                     pass.set_pipeline(&self.stencil);
@@ -1240,9 +1257,9 @@ impl Renderer {
                 }
                 pass.set_pipeline(&self.fill);
                 pass.set_stencil_reference(0);
-                pass.draw(0..6, m.fills + 1..m.fills + 2);
+                draw_quads(&mut pass, m.fills + 1..m.fills + 2);
                 pass.set_stencil_reference(1);
-                pass.draw(0..6, m.fills + 2..m.fills + 3);
+                draw_quads(&mut pass, m.fills + 2..m.fills + 3);
                 pass.set_pipeline(&self.sprite_unclipped);
                 draw_quads(&mut pass, m.icons.clone());
             }
@@ -1255,6 +1272,7 @@ impl Renderer {
                 color_attachments: &[color(output.view, wgpu::LoadOp::Clear(wgpu::Color::BLACK))],
                 ..Default::default()
             });
+            pass.set_index_buffer(self.quad_indices.slice(..), wgpu::IndexFormat::Uint16);
             let present = &self.presents[present];
             pass.set_pipeline(&present.frame);
             // The background slot, which says whether there are translucent ghosts, and is
