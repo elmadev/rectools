@@ -43,6 +43,9 @@ pub struct Renderer {
     level_rects: wgpu::Buffer,
     timer_buffer: wgpu::Buffer,
     frame: FramePlan,
+    // The texts drawn over every frame, see set_texts
+    texts: Vec<HudRect>,
+    text_rects: Vec<crate::hud::TextRect>,
     // A replay's frame as a World, kept for its buffers
     session_frame: SessionFrame,
     timing: Option<PassTiming>,
@@ -505,6 +508,8 @@ impl Renderer {
             ghost,
             presents: Vec::new(),
             frame: FramePlan::default(),
+            texts: Vec::new(),
+            text_rects: Vec::new(),
             session_frame: SessionFrame::default(),
             timing: None,
         }
@@ -832,6 +837,20 @@ impl Renderer {
         }
     }
 
+    // Draws `texts` over the frames from now on, in place of those set before
+    pub fn set_texts(&mut self, texts: &[crate::text::Text]) {
+        self.text_rects.clear();
+        for text in texts {
+            text.rects(&mut self.text_rects);
+        }
+        self.texts.clear();
+        self.texts.extend(
+            self.text_rects
+                .iter()
+                .map(|r| HudRect::new(r.rect, r.color as u32)),
+        );
+    }
+
     fn present_pipeline(&mut self, format: wgpu::TextureFormat) -> usize {
         if let Some(i) = self.presents.iter().position(|p| p.format == format) {
             return i;
@@ -933,6 +952,10 @@ impl Renderer {
                 bytemuck::cast_slice(&self.frame.level_rects),
             );
         }
+        // The texts go after the views' timers, over the whole target
+        let texts_start = self.frame.timer.len() as u32;
+        self.frame.timer.extend_from_slice(&self.texts);
+        let texts = texts_start..self.frame.timer.len() as u32;
         upload(
             &self.device,
             &self.queue,
@@ -1113,7 +1136,7 @@ impl Renderer {
             );
             pass.set_bind_group(1, &targets.present_group, &[]);
             pass.draw(0..3, 0..1);
-            if draws.iter().any(|d| !d.timer.is_empty()) {
+            if draws.iter().any(|d| !d.timer.is_empty()) || !texts.is_empty() {
                 pass.set_pipeline(&present.timer);
                 pass.set_vertex_buffer(0, self.timer_buffer.slice(..));
                 for (params, draw) in views.iter().zip(draws) {
@@ -1121,6 +1144,8 @@ impl Renderer {
                     pass.set_scissor_rect(x, y, w, h);
                     draw_quads(&mut pass, draw.timer.clone());
                 }
+                pass.set_scissor_rect(0, 0, targets.width, targets.height);
+                draw_quads(&mut pass, texts);
             }
         }
 

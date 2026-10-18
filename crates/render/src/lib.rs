@@ -10,6 +10,7 @@ pub mod minimap;
 mod options;
 mod plan;
 mod scene;
+pub mod text;
 mod world;
 
 pub use gpu::{GpuError, GpuScene, Output, Renderer, Targets, acquire, surface_format};
@@ -19,5 +20,6 @@ pub use options::{
 };
 pub use plan::{FramePlan, RenderError};
 pub use scene::{DynamicOptions, Scene, SceneOptions};
+pub use text::{Align, Font, Text};
 pub use wgpu;
 pub use world::{Bike, DrawnBike, Timer, View, World};

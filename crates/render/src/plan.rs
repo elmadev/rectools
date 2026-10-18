@@ -63,7 +63,7 @@ pub(crate) struct HudRect {
 pub(crate) const TIMER_COLOR: u32 = u32::MAX;
 
 impl HudRect {
-    fn new(r: PixelRect, color: u32) -> HudRect {
+    pub(crate) fn new(r: PixelRect, color: u32) -> HudRect {
         HudRect {
             rect: [r.x as f32, r.y as f32, r.width as f32, r.height as f32],
             color,

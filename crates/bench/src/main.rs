@@ -4,7 +4,8 @@ use game_data::{GameFolder, Ghost};
 use render::camera::{self, AutoFrame};
 use render::wgpu;
 use render::{
-    CameraMode, Output, RenderOptions, Renderer, Scene, SceneOptions, TextureZoom, ViewParams,
+    Align, CameraMode, Font, Output, RenderOptions, Renderer, Scene, SceneOptions, Text,
+    TextureZoom, ViewParams,
 };
 use replay::{MILLISECONDS_TO_PHYS_TIME, Session};
 use std::path::PathBuf;
@@ -27,6 +28,8 @@ Options:
   --frames <n>        stop after n frames
   --auto-zoom         zoom to fit every bike, like recview's auto zoom
   --passes            also time each pass on the GPU, where it can
+  --texts             write 15 lines of text over every frame, as a game's info panel and
+                      chat are, set again each frame
 ";
 
 struct Options {
@@ -39,6 +42,7 @@ struct Options {
     frames: Option<usize>,
     auto_zoom: bool,
     passes: bool,
+    texts: bool,
 }
 
 fn parse() -> Result<Options, String> {
@@ -52,6 +56,7 @@ fn parse() -> Result<Options, String> {
         frames: None,
         auto_zoom: false,
         passes: false,
+        texts: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -86,6 +91,7 @@ fn parse() -> Result<Options, String> {
             }
             "--auto-zoom" => opts.auto_zoom = true,
             "--passes" => opts.passes = true,
+            "--texts" => opts.texts = true,
             "-h" | "--help" => {
                 print!("{USAGE}");
                 std::process::exit(0);
@@ -230,6 +236,24 @@ fn run(opts: &Options) -> Result<(), String> {
             true,
             opts.auto_zoom.then_some((&mut auto_frame, 1.0 / FPS)),
         );
+        if opts.texts {
+            let lines: Vec<String> = (0..15)
+                .map(|i| format!("line {i}: frame {} of the replay, speed 123.4", total.len()))
+                .collect();
+            let font = Font::small();
+            let texts: Vec<Text> = lines
+                .iter()
+                .enumerate()
+                .map(|(i, line)| Text {
+                    font,
+                    text: line.as_bytes(),
+                    x: 10,
+                    y: opts.height as i32 - 30 - i as i32 * font.line_height(),
+                    align: Align::Left,
+                })
+                .collect();
+            renderer.set_texts(&texts);
+        }
         renderer
             .render(
                 &scene,
