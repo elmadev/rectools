@@ -8,6 +8,7 @@
   moment with the same view, without loading it again.
 - Following a ghost, the minimap shows the apples it has taken, where it showed the main
   replay's.
+- The ground and sky take less of the GPU to draw.
 
 ## 0.2.1 - 2026-10-17
 

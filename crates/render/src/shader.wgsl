@@ -138,6 +138,62 @@ fn vs_instance(@builtin(vertex_index) vertex: u32, instance: InstanceIn) -> Vert
     return out;
 }
 
+// The ground, sky and minimap fills: a quad over a whole view, which needs less from the
+// vertex shader than pictures do
+struct FillOut {
+    @builtin(position) position: vec4<f32>,
+    // The texture's rect in the atlas
+    @location(0) @interpolate(flat) texture: vec4<u32>,
+    // The mode, the texture's atlas layer, the color and the layer
+    @location(1) @interpolate(flat) params: vec4<u32>,
+    // The texture's size in game pixels, which Across's can have fractions of
+    @location(2) @interpolate(flat) game_size: vec2<f32>,
+    // Game textures: a tile's width and height at this zoom
+    @location(3) @interpolate(flat) tile: vec2<i32>,
+    // Game textures: 1 over the tile's width and height. Others: 1 over the texture's size
+    // at this zoom
+    @location(4) @interpolate(flat) tile_inverse: vec2<f32>,
+}
+
+@vertex
+fn vs_fill(@builtin(vertex_index) vertex: u32, instance: InstanceIn) -> FillOut {
+    var corners = array<vec2<f32>, 6>(
+        vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 0.0), vec2<f32>(0.0, 1.0),
+        vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 0.0), vec2<f32>(1.0, 1.0),
+    );
+    let st = corners[vertex];
+    let world = instance.origin + instance.axis_u * st.x + instance.axis_v * st.y;
+    var out: FillOut;
+    if (instance.snap == 1u) {
+        // As vs_instance places the level's pictures
+        let pixels = round((world - view.level_corner) * view.pixels_per_meter * 64.0) / 64.0;
+        let nudged = pixels + vec2<f32>(-0.01, 0.01);
+        out.position = vec4<f32>(nudged / view.size * 2.0 - vec2<f32>(1.0, 1.0), instance.depth, 1.0);
+    } else {
+        out.position = to_clip(world, view.corner, instance.depth);
+    }
+    out.texture = instance.texture;
+    out.params = vec4<u32>(
+        instance.params.x,
+        instance.atlas_layers >> 8u,
+        instance.params.z,
+        instance.params.w,
+    );
+    out.game_size = instance.texture_size;
+    // What every pixel of zoomed_texel and locked_texel would work out the same
+    let w = i32(instance.texture_size.x);
+    let h = i32(instance.texture_size.y);
+    let height = max(i32(floor(instance.texture_size.y * view.texture_scale)), 1);
+    let width = max(div_floor(w * height, max(h, 1)), 1);
+    out.tile = vec2<i32>(width, height);
+    if (view.game_textures != 0u) {
+        out.tile_inverse = vec2<f32>(1.0 / f32(width), 1.0 / f32(height));
+    } else {
+        out.tile_inverse = 1.0 / (vec2<f32>(f32(max(w, 1)), f32(max(h, 1))) * view.texture_scale);
+    }
+    return out;
+}
+
 // An image's place in the atlas is its rect, x, y, width and height, and its layer
 fn atlas_texel(rect: vec4<u32>, layer: u32, x: u32, y: u32) -> u32 {
     return textureLoad(atlas, vec2<u32>(rect.x + x, rect.y + y), layer, 0).r;
@@ -232,6 +288,75 @@ fn div_floor(a: i32, b: i32) -> i32 {
 
 fn positive_mod_i(a: i32, n: i32) -> i32 {
     return a - n * div_floor(a, n);
+}
+
+// div_floor with 1 / b worked out before, which a multiplication takes the place of
+fn div_floor_by(a: i32, b: i32, inverse: f32) -> i32 {
+    let q = i32(floor(f32(a) * inverse));
+    let r = a - q * b;
+    return q + select(0, -1, r < 0) + select(0, 1, r >= b);
+}
+
+// texture_texel_inside, without scaling the pixel for a texture the atlas has at its size in
+// game pixels, as every Elma texture is
+fn fill_texel_inside(in: FillOut, gx: i32, gy: i32) -> u32 {
+    let size = in.texture.zw;
+    if (f32(size.x) == in.game_size.x && f32(size.y) == in.game_size.y) {
+        return atlas_texel(in.texture, in.params.y, u32(gx), u32(gy));
+    }
+    return texture_texel_inside(in.texture, in.params.y, in.game_size, gx, gy);
+}
+
+// zoomed_texel at pixel (zx, zy), with the tile worked out by vs_fill
+fn fill_zoomed_texel(in: FillOut, zx: i32, zy: i32) -> u32 {
+    let w = i32(in.game_size.x);
+    let h = i32(in.game_size.y);
+    let width = in.tile.x;
+    let height = in.tile.y;
+    let x = zx - width * div_floor_by(zx, width, in.tile_inverse.x);
+    let y = zy - height * div_floor_by(zy, height, in.tile_inverse.y);
+    let gx = min(div_floor_by(x * h, height, in.tile_inverse.y), w - 1);
+    let gy = h - 1 - min(div_floor_by((height - 1 - y) * h, height, in.tile_inverse.y), h - 1);
+    return fill_texel_inside(in, gx, gy);
+}
+
+// locked_tile, with 1 over the texture's size at this zoom worked out before
+fn fill_locked_tile(p: i32, size: i32, inverse: f32) -> vec2<i32> {
+    let k = i32(floor(f32(p) * inverse));
+    var start = tile_start(k, size);
+    var end = tile_start(k + 1, size);
+    if (start > p) {
+        end = start;
+        start = tile_start(k - 1, size);
+    } else if (end <= p) {
+        start = end;
+        end = tile_start(k + 2, size);
+    }
+    return vec2<i32>(start, max(end - start, 1));
+}
+
+// locked_texel at pixel (zx, zy)
+fn fill_locked_texel(in: FillOut, zx: i32, zy: i32) -> u32 {
+    let w = i32(in.game_size.x);
+    let h = i32(in.game_size.y);
+    let column = fill_locked_tile(zx, w, in.tile_inverse.x);
+    let row = fill_locked_tile(zy, h, in.tile_inverse.y);
+    let x = zx - column.x;
+    let y = zy - row.x;
+    let gx = min(div_floor(x * w, column.y), w - 1);
+    let gy = h - 1 - min(div_floor((row.y - 1 - y) * h, row.y), h - 1);
+    return fill_texel_inside(in, gx, gy);
+}
+
+// resized_texel at pixel (zx, zy) for a fill
+fn fill_texel(in: FillOut, zx: i32, zy: i32) -> u32 {
+    if (view.texture_scale == 1.0) {
+        return texture_texel(in.texture, in.params.y, in.game_size, f32(zx), f32(zy));
+    }
+    if (view.game_textures != 0u) {
+        return fill_zoomed_texel(in, zx, zy);
+    }
+    return fill_locked_texel(in, zx, zy);
 }
 
 // The game resizes textures for the zoom (before flipping them) and tiles the result. Maps a
@@ -393,15 +518,20 @@ fn fs_level(in: VertexOut) -> LevelOut {
 // The ground, sky and minimap fills, which cover their whole quad. Without a discard, the GPU
 // can leave out the pixels the stencil rejects before shading them.
 @fragment
-fn fs_fill(in: VertexOut) -> LevelOut {
+fn fs_fill(in: FillOut) -> LevelOut {
     var out: LevelOut;
     out.layer = in.params.w;
+    // The pixel in the view, from its bottom left
+    let x = i32(floor(in.position.x - view.offset.x));
+    let y = i32(floor(view.offset.y + view.size.y - in.position.y));
     switch in.params.x {
         case MODE_TEXTURE: {
-            out.index = world_texture(in);
+            // On the level's canvas, whose pixels the view's corner is on
+            out.index = fill_texel(in, x + i32(view.canvas_pixel.x), y + i32(view.canvas_pixel.y));
         }
         case MODE_SKY: {
-            out.index = sky_texture(in);
+            // Resized and tiled like the ground, with the screen's rows rather than the level's
+            out.index = fill_texel(in, x + i32(view.sky_x), y);
         }
         default: {
             out.index = in.params.z;

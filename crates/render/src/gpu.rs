@@ -450,7 +450,10 @@ impl Renderer {
         });
         // The stencil reference picks ground (0) or sky (1)
         let fill_depth = depth_stencil(C::Always, false, C::Equal, S::Keep);
-        let fill = make(level("fill", "fs_fill", true, fill_depth.clone()));
+        let fill = make(PipelineDesc {
+            vs: "vs_fill",
+            ..level("fill", "fs_fill", true, fill_depth.clone())
+        });
         // Across's sky, whose pictures have transparent pixels
         let fill_masked = make(level("masked fill", "fs_level", true, fill_depth));
         let sprite_clipped = make(level(
