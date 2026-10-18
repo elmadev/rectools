@@ -491,17 +491,18 @@ impl Renderer {
             ..level("fill", "fs_fill", true, fill_depth.clone())
         });
         // Across's sky, whose pictures have transparent pixels
-        let fill_masked = make(level("masked fill", "fs_level", true, fill_depth));
-        let sprite_clipped = make(level(
+        // The level's pictures, with inputs of their own
+        let pictures = |label, depth| PipelineDesc {
+            vs: "vs_picture",
+            ..level(label, "fs_level", true, depth)
+        };
+        let fill_masked = make(pictures("masked fill", fill_depth));
+        let sprite_clipped = make(pictures(
             "clipped pictures",
-            "fs_level",
-            true,
             depth_stencil(C::Less, true, C::Equal, S::Keep),
         ));
-        let sprite_unclipped = make(level(
+        let sprite_unclipped = make(pictures(
             "unclipped pictures",
-            "fs_level",
-            true,
             depth_stencil(C::Less, true, C::Always, S::Keep),
         ));
         // Bikes and objects write the scene and clear translucent ghosts under them;

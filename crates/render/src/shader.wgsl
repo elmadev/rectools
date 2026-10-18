@@ -70,7 +70,6 @@ struct InstanceIn {
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
     @location(0) st: vec2<f32>,
-    @location(1) world: vec2<f32>,
     @location(2) @interpolate(flat) image: vec4<u32>,
     @location(3) @interpolate(flat) texture: vec4<u32>,
     @location(4) @interpolate(flat) texture_size: vec2<f32>,
@@ -92,41 +91,47 @@ fn to_clip(world: vec2<f32>, corner: vec2<f32>, depth: f32) -> vec4<f32> {
     return vec4<f32>(clip, depth, 1.0);
 }
 
-@vertex
-fn vs_instance(@builtin(vertex_index) vertex: u32, instance: InstanceIn) -> VertexOut {
-    var corners = array<vec2<f32>, 6>(
-        vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 0.0), vec2<f32>(0.0, 1.0),
-        vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 0.0), vec2<f32>(1.0, 1.0),
-    );
-    let st = corners[vertex];
-    var world = instance.origin + instance.axis_u * st.x + instance.axis_v * st.y;
-    var out: VertexOut;
+// Where corner `st` of an instance goes on the target
+fn instance_position(st: vec2<f32>, instance: InstanceIn) -> vec4<f32> {
+    let world = instance.origin + instance.axis_u * st.x + instance.axis_v * st.y;
     let rect = instance.rect;
     if (rect.w < 0) {
         // Left out at this zoom
-        out.position = vec4<f32>(2.0, 2.0, 0.0, 1.0);
-    } else if (rect.w > 0) {
+        return vec4<f32>(2.0, 2.0, 0.0, 1.0);
+    }
+    if (rect.w > 0) {
         // On the canvas's whole pixels, the rect's left column to its right and its top row
         // down, as the game draws it at this zoom
         let canvas = vec2<f32>(f32(rect.x) + st.x * f32(rect.z), f32(rect.y + 1) - st.y * f32(rect.w));
         let pixels = canvas - view.canvas_pixel;
-        out.position = vec4<f32>(pixels / view.size * 2.0 - vec2<f32>(1.0, 1.0), instance.depth, 1.0);
-        world = view.canvas_origin + canvas / view.pixels_per_meter;
-    } else if (instance.snap == 1u) {
+        return vec4<f32>(pixels / view.size * 2.0 - vec2<f32>(1.0, 1.0), instance.depth, 1.0);
+    }
+    if (instance.snap == 1u) {
         // The level's pictures can have their edges on pixel centers, and where two meet,
         // such as grass pieces, each works its edge out a little differently. Rounded so they
         // meet exactly, and moved off the centers like the polygons, so that rounding doesn't
         // change from frame to frame which pixels they cover, or leave gaps between them.
         let pixels = round((world - view.level_corner) * view.pixels_per_meter * 64.0) / 64.0;
         let nudged = pixels + vec2<f32>(-0.01, 0.01);
-        out.position = vec4<f32>(nudged / view.size * 2.0 - vec2<f32>(1.0, 1.0), instance.depth, 1.0);
-    } else {
-        // The game samples bikes at pixel corners rather than centers
-        let corner = view.corner - vec2<f32>(0.5, 0.5) / view.pixels_per_meter;
-        out.position = to_clip(world, corner, instance.depth);
+        return vec4<f32>(nudged / view.size * 2.0 - vec2<f32>(1.0, 1.0), instance.depth, 1.0);
     }
+    // The game samples bikes at pixel corners rather than centers
+    let corner = view.corner - vec2<f32>(0.5, 0.5) / view.pixels_per_meter;
+    return to_clip(world, corner, instance.depth);
+}
+
+const QUAD_CORNERS = array<vec2<f32>, 6>(
+    vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 0.0), vec2<f32>(0.0, 1.0),
+    vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 0.0), vec2<f32>(1.0, 1.0),
+);
+
+@vertex
+fn vs_instance(@builtin(vertex_index) vertex: u32, instance: InstanceIn) -> VertexOut {
+    let st = QUAD_CORNERS[vertex];
+    var out: VertexOut;
+    out.position = instance_position(st, instance);
+    let rect = instance.rect;
     out.st = st;
-    out.world = world;
     out.image = instance.image;
     out.texture = instance.texture;
     out.texture_size = instance.texture_size;
@@ -139,6 +144,81 @@ fn vs_instance(@builtin(vertex_index) vertex: u32, instance: InstanceIn) -> Vert
     out.rounding = instance.rounding;
     out.orientation = instance.orientation;
     return out;
+}
+
+// The level's pictures: what `shade` reads, without the bikes' affine quads and with the small
+// values packed, as the pictures are many and reading every pixel's inputs took most of their
+// time
+struct PictureOut {
+    @builtin(position) position: vec4<f32>,
+    @location(0) st: vec2<f32>,
+    // The mode, transparency (9 bits), color and layer; the atlas layers and the orientation;
+    // the image rect's x and y, and its width and height, 16 bits each
+    @location(1) @interpolate(flat) packed: vec4<u32>,
+    // The texture rect's x and y, and its width and height
+    @location(2) @interpolate(flat) texture: vec2<u32>,
+    // The texture's size in game pixels, and resize_rounding
+    @location(3) @interpolate(flat) sizes: vec4<f32>,
+    @location(4) @interpolate(flat) rect: vec4<i32>,
+}
+
+fn pack16(a: u32, b: u32) -> u32 {
+    return a | (b << 16u);
+}
+
+@vertex
+fn vs_picture(@builtin(vertex_index) vertex: u32, instance: InstanceIn) -> PictureOut {
+    let st = QUAD_CORNERS[vertex];
+    var out: PictureOut;
+    out.position = instance_position(st, instance);
+    out.st = st;
+    let p = instance.params;
+    out.packed = vec4<u32>(
+        p.x | (p.y << 8u) | (p.z << 17u) | (p.w << 25u),
+        instance.atlas_layers | (instance.orientation << 16u),
+        pack16(instance.image.x, instance.image.y),
+        pack16(instance.image.z, instance.image.w),
+    );
+    out.texture = vec2<u32>(
+        pack16(instance.texture.x, instance.texture.y),
+        pack16(instance.texture.z, instance.texture.w),
+    );
+    out.sizes = vec4<f32>(instance.texture_size, instance.rounding, 0.0);
+    out.rect = instance.rect;
+    return out;
+}
+
+// A picture's inputs as `shade` reads them
+fn unpacked(p: PictureOut) -> VertexOut {
+    var in: VertexOut;
+    in.position = p.position;
+    in.st = p.st;
+    let params = p.packed.x;
+    in.params = vec4<u32>(
+        params & 0xffu,
+        (params >> 8u) & 0x1ffu,
+        (params >> 17u) & 0xffu,
+        params >> 25u,
+    );
+    let layers = p.packed.y;
+    in.atlas_layers = vec2<u32>(layers & 0xffu, (layers >> 8u) & 0xffu);
+    in.orientation = layers >> 16u;
+    in.image = vec4<u32>(
+        p.packed.z & 0xffffu,
+        p.packed.z >> 16u,
+        p.packed.w & 0xffffu,
+        p.packed.w >> 16u,
+    );
+    in.texture = vec4<u32>(
+        p.texture.x & 0xffffu,
+        p.texture.x >> 16u,
+        p.texture.y & 0xffffu,
+        p.texture.y >> 16u,
+    );
+    in.texture_size = p.sizes.xy;
+    in.rounding = p.sizes.z;
+    in.rect = p.rect;
+    return in;
 }
 
 // The ground, sky and minimap fills: a quad over a whole view, which needs less from the
@@ -289,10 +369,6 @@ fn div_floor(a: i32, b: i32) -> i32 {
     return q + select(0, -1, r < 0) + select(0, 1, r >= b);
 }
 
-fn positive_mod_i(a: i32, n: i32) -> i32 {
-    return a - n * div_floor(a, n);
-}
-
 // div_floor with 1 / b worked out before, which a multiplication takes the place of
 fn div_floor_by(a: i32, b: i32, inverse: f32) -> i32 {
     let q = i32(floor(f32(a) * inverse));
@@ -302,32 +378,42 @@ fn div_floor_by(a: i32, b: i32, inverse: f32) -> i32 {
 
 // texture_texel_inside, without scaling the pixel for a texture the atlas has at its size in
 // game pixels, as every Elma texture is
-fn fill_texel_inside(in: FillOut, gx: i32, gy: i32) -> u32 {
-    let size = in.texture.zw;
-    if (f32(size.x) == in.game_size.x && f32(size.y) == in.game_size.y) {
-        return atlas_texel(in.texture, in.params.y, u32(gx), u32(gy));
+fn texel_inside(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, gx: i32, gy: i32) -> u32 {
+    if (f32(rect.z) == game_size.x && f32(rect.w) == game_size.y) {
+        return atlas_texel(rect, layer, u32(gx), u32(gy));
     }
-    return texture_texel_inside(in.texture, in.params.y, in.game_size, gx, gy);
+    return texture_texel_inside(rect, layer, game_size, gx, gy);
 }
 
-// zoomed_texel at pixel (zx, zy), with the tile worked out by vs_fill
-fn fill_zoomed_texel(in: FillOut, zx: i32, zy: i32) -> u32 {
-    let w = i32(in.game_size.x);
-    let h = i32(in.game_size.y);
-    let width = in.tile.x;
-    let height = in.tile.y;
-    let x = zx - width * div_floor_by(zx, width, in.tile_inverse.x);
-    let y = zy - height * div_floor_by(zy, height, in.tile_inverse.y);
-    let gx = min(div_floor_by(x * h, height, in.tile_inverse.y), w - 1);
-    let gy = h - 1 - min(div_floor_by((height - 1 - y) * h, height, in.tile_inverse.y), h - 1);
-    return fill_texel_inside(in, gx, gy);
+// zoomed_texel at pixel (zx, zy) of a texture whose tile at this zoom is `tile` pixels, with 1
+// over them in `inverse`
+fn tiled_zoomed_texel(
+    rect: vec4<u32>,
+    layer: u32,
+    game_size: vec2<f32>,
+    tile: vec2<i32>,
+    inverse: vec2<f32>,
+    zx: i32,
+    zy: i32,
+) -> u32 {
+    let w = i32(game_size.x);
+    let h = i32(game_size.y);
+    let width = tile.x;
+    let height = tile.y;
+    let x = zx - width * div_floor_by(zx, width, inverse.x);
+    let y = zy - height * div_floor_by(zy, height, inverse.y);
+    let gx = min(div_floor_by(x * h, height, inverse.y), w - 1);
+    let gy = h - 1 - min(div_floor_by((height - 1 - y) * h, height, inverse.y), h - 1);
+    return texel_inside(rect, layer, game_size, gx, gy);
 }
 
-// locked_tile, with 1 over the texture's size at this zoom worked out before
-fn fill_locked_tile(p: i32, size: i32, inverse: f32) -> vec2<i32> {
+// The tile of a texture `size` pixels long that pixel `p` is in, as its start and length,
+// with 1 over its size at this zoom in `inverse`
+fn locked_tile(p: i32, size: i32, inverse: f32) -> vec2<i32> {
     let k = i32(floor(f32(p) * inverse));
     var start = tile_start(k, size);
     var end = tile_start(k + 1, size);
+    // The estimate can be a tile off from where tile_start puts the tiles
     if (start > p) {
         end = start;
         start = tile_start(k - 1, size);
@@ -338,17 +424,24 @@ fn fill_locked_tile(p: i32, size: i32, inverse: f32) -> vec2<i32> {
     return vec2<i32>(start, max(end - start, 1));
 }
 
-// locked_texel at pixel (zx, zy)
-fn fill_locked_texel(in: FillOut, zx: i32, zy: i32) -> u32 {
-    let w = i32(in.game_size.x);
-    let h = i32(in.game_size.y);
-    let column = fill_locked_tile(zx, w, in.tile_inverse.x);
-    let row = fill_locked_tile(zy, h, in.tile_inverse.y);
+// locked_texel at pixel (zx, zy), with 1 over the texture's size at this zoom in `inverse`
+fn tiled_locked_texel(
+    rect: vec4<u32>,
+    layer: u32,
+    game_size: vec2<f32>,
+    inverse: vec2<f32>,
+    zx: i32,
+    zy: i32,
+) -> u32 {
+    let w = i32(game_size.x);
+    let h = i32(game_size.y);
+    let column = locked_tile(zx, w, inverse.x);
+    let row = locked_tile(zy, h, inverse.y);
     let x = zx - column.x;
     let y = zy - row.x;
     let gx = min(div_floor(x * w, column.y), w - 1);
     let gy = h - 1 - min(div_floor((row.y - 1 - y) * h, row.y), h - 1);
-    return fill_texel_inside(in, gx, gy);
+    return texel_inside(rect, layer, game_size, gx, gy);
 }
 
 // resized_texel at pixel (zx, zy) for a fill
@@ -357,9 +450,9 @@ fn fill_texel(in: FillOut, zx: i32, zy: i32) -> u32 {
         return texture_texel(in.texture, in.params.y, in.game_size, f32(zx), f32(zy));
     }
     if (view.game_textures != 0u) {
-        return fill_zoomed_texel(in, zx, zy);
+        return tiled_zoomed_texel(in.texture, in.params.y, in.game_size, in.tile, in.tile_inverse, zx, zy);
     }
-    return fill_locked_texel(in, zx, zy);
+    return tiled_locked_texel(in.texture, in.params.y, in.game_size, in.tile_inverse, zx, zy);
 }
 
 // The game resizes textures for the zoom (before flipping them) and tiles the result. Maps a
@@ -374,32 +467,13 @@ fn zoomed_texel(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, zx: f32, zy: 
     let h = i32(game_size.y);
     let height = max(i32(floor(game_size.y * view.texture_scale)), 1);
     let width = max(div_floor(w * height, h), 1);
-    let x = positive_mod_i(i32(zx), width);
-    let y = positive_mod_i(i32(zy), height);
-    let gx = min(div_floor(x * h, height), w - 1);
-    let gy = h - 1 - min(div_floor((height - 1 - y) * h, height), h - 1);
-    return texture_texel_inside(rect, layer, game_size, gx, gy);
+    let inverse = vec2<f32>(1.0 / f32(width), 1.0 / f32(height));
+    return tiled_zoomed_texel(rect, layer, game_size, vec2<i32>(width, height), inverse, i32(zx), i32(zy));
 }
 
 // Where tile `k` of a texture `size` pixels long starts, in pixels at this zoom
 fn tile_start(k: i32, size: i32) -> i32 {
     return i32(floor(f32(k * size) * view.texture_scale));
-}
-
-// The tile of a texture `size` pixels long that pixel `p` is in, as its start and length
-fn locked_tile(p: i32, size: i32) -> vec2<i32> {
-    let k = i32(floor(f32(p) / (f32(size) * view.texture_scale)));
-    var start = tile_start(k, size);
-    var end = tile_start(k + 1, size);
-    // The division can be a tile off from where tile_start puts the tiles
-    if (start > p) {
-        end = start;
-        start = tile_start(k - 1, size);
-    } else if (end <= p) {
-        start = end;
-        end = tile_start(k + 2, size);
-    }
-    return vec2<i32>(start, max(end - start, 1));
 }
 
 // Like zoomed_texel, but each tile is where the texture is at zoom 1, to the nearest pixel, so
@@ -410,15 +484,9 @@ fn locked_texel(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, zx: f32, zy: 
     if (view.texture_scale == 1.0) {
         return texture_texel(rect, layer, game_size, zx, zy);
     }
-    let w = i32(game_size.x);
-    let h = i32(game_size.y);
-    let column = locked_tile(i32(zx), w);
-    let row = locked_tile(i32(zy), h);
-    let x = i32(zx) - column.x;
-    let y = i32(zy) - row.x;
-    let gx = min(div_floor(x * w, column.y), w - 1);
-    let gy = h - 1 - min(div_floor((row.y - 1 - y) * h, row.y), h - 1);
-    return texture_texel_inside(rect, layer, game_size, gx, gy);
+    let size = vec2<f32>(f32(max(i32(game_size.x), 1)), f32(max(i32(game_size.y), 1)));
+    let inverse = 1.0 / (size * view.texture_scale);
+    return tiled_locked_texel(rect, layer, game_size, inverse, i32(zx), i32(zy));
 }
 
 fn resized_texel(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, zx: f32, zy: f32) -> u32 {
@@ -429,8 +497,10 @@ fn resized_texel(rect: vec4<u32>, layer: u32, game_size: vec2<f32>, zx: f32, zy:
 }
 
 fn world_texture(in: VertexOut) -> u32 {
-    let p = floor((in.world - view.canvas_origin) * view.pixels_per_meter);
-    return resized_texel(in.texture, in.atlas_layers.y, in.texture_size, p.x, p.y);
+    // The pixel on the level's canvas, whose pixels the view's corner is on
+    let x = floor(in.position.x - view.offset.x) + view.canvas_pixel.x;
+    let y = floor(view.offset.y + view.size.y - in.position.y) + view.canvas_pixel.y;
+    return resized_texel(in.texture, in.atlas_layers.y, in.texture_size, x, y);
 }
 
 fn sky_texture(in: VertexOut) -> u32 {
@@ -511,7 +581,8 @@ struct LevelOut {
 }
 
 @fragment
-fn fs_level(in: VertexOut) -> LevelOut {
+fn fs_level(picture: PictureOut) -> LevelOut {
+    let in = unpacked(picture);
     var out: LevelOut;
     out.index = shade(in);
     out.layer = in.params.w;
