@@ -43,6 +43,9 @@ pub struct Renderer {
     level_rects: wgpu::Buffer,
     timer_buffer: wgpu::Buffer,
     frame: FramePlan,
+    // The frame's fill maps, see fill_map.rs, and the bind group the fills read them with
+    fill_maps: wgpu::Texture,
+    fill_map_group: wgpu::BindGroup,
     // The texts drawn over every frame, see set_texts
     texts: Vec<HudRect>,
     text_rects: Vec<crate::hud::TextRect>,
@@ -88,6 +91,38 @@ pub struct Targets {
     depth_view: wgpu::TextureView,
     layers_group: wgpu::BindGroup,
     present_group: wgpu::BindGroup,
+}
+
+// A texture of `width` by `height` fill map texels, and the fills' bind group for it
+fn fill_map_texture(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    width: u32,
+    height: u32,
+) -> (wgpu::Texture, wgpu::BindGroup) {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("fill maps"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::R16Uint,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("fill maps"),
+        layout,
+        entries: &[texture_binding(
+            0,
+            &texture.create_view(&Default::default()),
+        )],
+    });
+    (texture, group)
 }
 
 fn texture_entry(
@@ -452,6 +487,7 @@ impl Renderer {
         let fill_depth = depth_stencil(C::Always, false, C::Equal, S::Keep);
         let fill = make(PipelineDesc {
             vs: "vs_fill",
+            layout: &with_texture,
             ..level("fill", "fs_fill", true, fill_depth.clone())
         });
         // Across's sky, whose pictures have transparent pixels
@@ -489,7 +525,10 @@ impl Renderer {
         let ghost =
             translucent_ghosts.then(|| make(bikes("translucent ghosts", "fs_ghost", false)));
 
+        let (fill_maps, fill_map_group) = fill_map_texture(&device, &texture_layout, 1, 1);
         Renderer {
+            fill_maps,
+            fill_map_group,
             dynamic_buffer: vertex_buffer(&device, "dynamic instances", 64 * 1024),
             dynamic_rects: vertex_buffer(&device, "dynamic rects", 16 * 1024),
             level_rects: vertex_buffer(&device, "level rects", 16 * 1024),
@@ -840,6 +879,36 @@ impl Renderer {
         }
     }
 
+    // Sends the frame's fill maps to the GPU, in a texture grown to fit them
+    fn upload_fill_maps(&mut self) {
+        let maps = &self.frame.fill_maps;
+        let width = self.frame.fill_map_width;
+        if maps.is_empty() || width == 0 {
+            return;
+        }
+        let rows = (maps.len() / width as usize) as u32;
+        let texture = &self.fill_maps;
+        if texture.width() < width || texture.height() < rows {
+            let (w, h) = (width.max(texture.width()), rows.max(texture.height()));
+            (self.fill_maps, self.fill_map_group) =
+                fill_map_texture(&self.device, &self.texture_layout, w, h);
+        }
+        self.queue.write_texture(
+            self.fill_maps.as_image_copy(),
+            bytemuck::cast_slice(maps),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 2),
+                rows_per_image: Some(rows),
+            },
+            wgpu::Extent3d {
+                width,
+                height: rows,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+
     // Draws `texts` over the frames from now on, in place of those set before
     pub fn set_texts(&mut self, texts: &[crate::text::Text]) {
         self.text_rects.clear();
@@ -966,6 +1035,7 @@ impl Renderer {
             "timer rects",
             bytemuck::cast_slice(&self.frame.timer),
         );
+        self.upload_fill_maps();
         let present = self.present_pipeline(output.format);
         let draws = &self.frame.views;
         let background = self.frame.background;
@@ -1006,6 +1076,7 @@ impl Renderer {
                 depth_stencil_attachment: Some(depth_attachment(&targets.depth_view)),
                 ..Default::default()
             });
+            pass.set_bind_group(1, &self.fill_map_group, &[]);
             set_view(
                 &mut pass,
                 BACKGROUND_SLOT,
@@ -1093,6 +1164,7 @@ impl Renderer {
                 depth_stencil_attachment: Some(depth_attachment(&targets.depth_view)),
                 ..Default::default()
             });
+            pass.set_bind_group(1, &self.fill_map_group, &[]);
             for (i, draw) in draws.iter().enumerate() {
                 let Some(m) = &draw.minimap else {
                     continue;

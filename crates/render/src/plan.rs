@@ -3,6 +3,7 @@
 // and encodes the passes.
 
 use crate::camera::{self, world_view_corner};
+use crate::fill_map::Tiling;
 use crate::hud::{PixelRect, last_apple_rects, timer_rects};
 use crate::instance::{CanvasRect, Instance, mode, snap_to_pixel_center};
 use crate::options::{CameraMode, GhostStyle, RenderOptions, TextureZoom};
@@ -44,8 +45,9 @@ pub(crate) struct ViewUniform {
     translucent_ghosts: u32,
     // 1 when the bikes go over everything, pictures in the background
     bikes_on_top: u32,
-    // To the size of the shader's struct, a multiple of its vec2s
-    _padding: u32,
+    // The first of the view's four rows in the fill maps plus 1, or 0 when the fills work out
+    // each pixel's texel themselves
+    fill_maps: u32,
 }
 
 const _: () = assert!(std::mem::size_of::<ViewUniform>().is_multiple_of(8));
@@ -122,6 +124,10 @@ pub struct FramePlan {
     // The instance of the frame behind the views, None when they cover the target
     pub(crate) background: Option<u32>,
     pub(crate) translucent_ghosts: bool,
+    // Rows of `fill_map_width`, four for each view that has them: the ground's texel for
+    // each column and row of the view, then the sky's, see fill_map.rs
+    pub(crate) fill_maps: Vec<u16>,
+    pub(crate) fill_map_width: u32,
 }
 
 fn view_uniform(
@@ -175,6 +181,43 @@ fn view_uniform(
     }
 }
 
+// Adds the view's four rows of fill maps to `maps`, rows `width` long, and returns the first,
+// when the ground and sky are Elma textures the atlas has at their size
+fn fill_maps(
+    maps: &mut Vec<u16>,
+    width: u32,
+    scene: &Scene,
+    u: &ViewUniform,
+    [_, _, vw, vh]: [u32; 4],
+) -> Option<u32> {
+    let Look::Elma(elma) = &scene.look else {
+        return None;
+    };
+    let tiling = |t: &TextureRef| {
+        let exact = t.rect.width as f64 == t.size.0 && t.rect.height as f64 == t.size.1;
+        exact.then_some(Tiling {
+            w: t.size.0 as i32,
+            h: t.size.1 as i32,
+            scale: u.texture_scale,
+            game: u.game_textures != 0,
+        })
+    };
+    let (ground, sky) = (tiling(&scene.foreground)?, tiling(&elma.background)?);
+    let row = (maps.len() / width as usize) as u32;
+    let start = maps.len();
+    maps.resize(start + 4 * width as usize, 0);
+    let rows = &mut maps[start..];
+    let (left, bottom) = (u.canvas_pixel[0] as i32, u.canvas_pixel[1] as i32);
+    let sky_x = u.sky_x as i32;
+    let w = width as usize;
+    let (vw, vh) = (vw as usize, vh as usize);
+    ground.columns(left, &mut rows[..vw]);
+    ground.rows(bottom, &mut rows[w..w + vh]);
+    sky.columns(sky_x, &mut rows[2 * w..2 * w + vw]);
+    sky.rows(0, &mut rows[3 * w..3 * w + vh]);
+    Some(row)
+}
+
 // Whether `views` cover every pixel of the target. Their edges cut it into cells that are
 // each inside a view or outside them all.
 fn covers(views: &[View], (width, height): (u32, u32)) -> bool {
@@ -211,6 +254,15 @@ pub fn plan(
     if views.len() > MAX_VIEWS {
         return Err(RenderError::TooManyViews(views.len()));
     }
+    // Each view's fill maps are rows as long as its longer side
+    let map_width = views
+        .iter()
+        .map(|v| v.viewport[2].max(v.viewport[3]))
+        .max()
+        .unwrap_or(0);
+    frame.fill_maps.clear();
+    frame.fill_map_width = map_width;
+    let frame_maps = &mut frame.fill_maps;
     frame.uniforms.clear();
     frame
         .uniforms
@@ -233,7 +285,10 @@ pub fn plan(
     let front_grass =
         !options.dynamic.pictures_in_background && scene.pictures().is_some_and(|p| p.front_grass);
     for (i, params) in views.iter().enumerate() {
-        let u = view_uniform(scene, world, params, width, options, front_grass);
+        let mut u = view_uniform(scene, world, params, width, options, front_grass);
+        if let Some(row) = fill_maps(frame_maps, map_width, scene, &u, params.viewport) {
+            u.fill_maps = row + 1;
+        }
         write_uniform(i, &u);
 
         // Ground and sky cover the whole view, a meter beyond each edge

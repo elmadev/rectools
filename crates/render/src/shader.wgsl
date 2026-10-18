@@ -25,6 +25,9 @@ struct View {
     translucent_ghosts: u32,
     // 1 when the bikes go over everything, pictures in the background
     bikes_on_top: u32,
+    // The first of the view's four rows in the fill maps plus 1, or 0 when the fills work out
+    // each pixel's texel themselves
+    fill_maps: u32,
 }
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -515,6 +518,17 @@ fn fs_level(in: VertexOut) -> LevelOut {
     return out;
 }
 
+// The texel of each column and row of the view, for the ground and then the sky, see
+// fill_map.rs
+@group(1) @binding(0) var fill_maps: texture_2d<u32>;
+
+// The texel at column x and row y of the view from the maps' rows `row` and the one after
+fn mapped_texel(in: FillOut, row: i32, x: i32, y: i32) -> u32 {
+    let tx = textureLoad(fill_maps, vec2<i32>(x, row), 0).r;
+    let ty = textureLoad(fill_maps, vec2<i32>(y, row + 1), 0).r;
+    return atlas_texel(in.texture, in.params.y, tx, ty);
+}
+
 // The ground, sky and minimap fills, which cover their whole quad. Without a discard, the GPU
 // can leave out the pixels the stencil rejects before shading them.
 @fragment
@@ -524,6 +538,15 @@ fn fs_fill(in: FillOut) -> LevelOut {
     // The pixel in the view, from its bottom left
     let x = i32(floor(in.position.x - view.offset.x));
     let y = i32(floor(view.offset.y + view.size.y - in.position.y));
+    let maps = i32(view.fill_maps) - 1;
+    if (maps >= 0 && in.params.x == MODE_TEXTURE) {
+        out.index = mapped_texel(in, maps, x, y);
+        return out;
+    }
+    if (maps >= 0 && in.params.x == MODE_SKY) {
+        out.index = mapped_texel(in, maps + 2, x, y);
+        return out;
+    }
     switch in.params.x {
         case MODE_TEXTURE: {
             // On the level's canvas, whose pixels the view's corner is on

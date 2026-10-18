@@ -2,6 +2,7 @@ pub mod across;
 mod atlas;
 mod bike;
 pub mod camera;
+mod fill_map;
 mod gpu;
 mod grass;
 mod hud;
