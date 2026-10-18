@@ -647,11 +647,16 @@ impl Viewer {
         let name = format!("replay {}", loaded.ghosts + 2);
         let rec = Rec::parse(&ghost.rec).map_err(|e| failure("ghost", format!("{name}: {e}")))?;
         let shirt = ghost.shirt.as_ref().and_then(|s| s.decode(&lgr.palette));
-        // The scene has the shirts in it, and nothing else of the bikes
-        let new_shirt = shirt.is_some();
         let riders = loaded.data.riders.len();
         loaded.data.merge(name, &rec, shirt).map_err(load_failure)?;
-        if new_shirt {
+        // The scene has the shirts in it, and nothing else of the bikes. The new one goes in
+        // where there is room, or else the scene is built again with it.
+        if let Some(shirt) = &loaded.data.riders[riders].1
+            && self
+                .renderer
+                .set_shirt(&mut loaded.scene, riders, Some(shirt))
+                .is_err()
+        {
             match build_scene(&self.renderer, &loaded.data, &loaded.built_with) {
                 Ok(scene) => loaded.scene = scene,
                 Err(e) => {
