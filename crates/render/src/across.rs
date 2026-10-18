@@ -133,6 +133,8 @@ pub fn scene(
     Ok(Scene {
         atlas_size: atlas.layer_size(),
         atlas_layers: atlas.into_layers(),
+        // Across has no shirts to find room for
+        packer: Default::default(),
         palette: gfx.palette,
         // One color, unlike Elma's timer that stands out from what is behind it (DIGIT.CPP)
         timer_map: [gfx.timer_color; 256],

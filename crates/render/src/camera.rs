@@ -1,29 +1,71 @@
 use crate::instance::M2P;
 use crate::options::{CameraMode, MAX_ZOOM, MIN_ZOOM, ViewParams};
+use crate::world::{View, World};
 use elma_formats::lev::Level;
 use replay::{Rider, Session, Vec2};
 
 // Bottom left corner of a view in world meters, following the game's camera unless the
 // view has a fixed center. `screen_width` is the width of the whole output.
 pub fn view_corner(session: &Session, params: &ViewParams, screen_width: u32) -> Vec2 {
-    let (vw, vh) = (params.viewport[2] as f64, params.viewport[3] as f64);
-    let ppm = pixels_per_meter(params.zoom);
-    if let Some(center) = params.center {
-        return center - Vec2::new(vw / ppm / 2.0, vh / ppm / 2.0);
-    }
-    let camera_x = match params.camera {
-        CameraMode::Classic => match session.settings().game.camera_edge() {
-            Some(edge) => (vw / ppm) * edge,
-            None => (screen_width as f64 / ppm) * 0.15 * params.zoom,
-        },
-        CameraMode::Centered => (vw / ppm) * 0.5,
-    };
-    let camera_dx = vw / ppm - 2.0 * camera_x;
-    let camera_y = vh / ppm / 2.0;
     let rider = followed(session, params.follow);
+    let camera = Camera {
+        viewport: params.viewport,
+        zoom: params.zoom,
+        mode: params.camera,
+        edge: session.settings().game.camera_edge(),
+        pan: params.pan,
+        center: params.center,
+    };
     let phase = rider.animation.camera_turning.turn_phase;
-    let center = rider.pose.bike_r + params.pan;
-    center - Vec2::new(camera_x + phase * camera_dx, camera_y)
+    camera.corner(rider.pose.bike_r, phase, screen_width)
+}
+
+// The corner of a World's view, as view_corner
+pub fn world_view_corner(world: &World, view: &View, screen_width: u32) -> Vec2 {
+    let camera = Camera {
+        viewport: view.viewport,
+        zoom: view.zoom,
+        mode: view.camera,
+        edge: view.camera_edge,
+        pan: view.pan,
+        center: view.center,
+    };
+    // Without a bike to follow, as if at the level's origin facing left
+    let bike = view.followed(world).copied().unwrap_or_default();
+    let phase = bike.animation.camera_turning.turn_phase;
+    camera.corner(bike.pose.bike_r, phase, screen_width)
+}
+
+// Where a view looks, whatever it is a view of
+struct Camera {
+    viewport: [u32; 4],
+    zoom: f64,
+    mode: CameraMode,
+    edge: Option<f64>,
+    pan: Vec2,
+    center: Option<Vec2>,
+}
+
+impl Camera {
+    // Following a bike at `bike_r`, `phase` of the way through turning the camera
+    fn corner(&self, bike_r: Vec2, phase: f64, screen_width: u32) -> Vec2 {
+        let (vw, vh) = (self.viewport[2] as f64, self.viewport[3] as f64);
+        let ppm = pixels_per_meter(self.zoom);
+        if let Some(center) = self.center {
+            return center - Vec2::new(vw / ppm / 2.0, vh / ppm / 2.0);
+        }
+        let camera_x = match self.mode {
+            CameraMode::Classic => match self.edge {
+                Some(edge) => (vw / ppm) * edge,
+                None => (screen_width as f64 / ppm) * 0.15 * self.zoom,
+            },
+            CameraMode::Centered => (vw / ppm) * 0.5,
+        };
+        let camera_dx = vw / ppm - 2.0 * camera_x;
+        let camera_y = vh / ppm / 2.0;
+        let center = bike_r + self.pan;
+        center - Vec2::new(camera_x + phase * camera_dx, camera_y)
+    }
 }
 
 pub(crate) fn view_center(session: &Session, params: &ViewParams, screen_width: u32) -> Vec2 {

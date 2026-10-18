@@ -5,6 +5,8 @@ use crate::plan::{
     UNIFORM_SLOTS, UNIFORM_STRIDE, ViewUniform, plan,
 };
 use crate::scene::{Look, Scene};
+use crate::world::{SessionFrame, View, World};
+use elma_formats::pic::Pic8;
 use replay::Session;
 use std::num::NonZeroU64;
 
@@ -41,6 +43,8 @@ pub struct Renderer {
     level_rects: wgpu::Buffer,
     timer_buffer: wgpu::Buffer,
     frame: FramePlan,
+    // A replay's frame as a World, kept for its buffers
+    session_frame: SessionFrame,
     timing: Option<PassTiming>,
 }
 
@@ -65,6 +69,7 @@ struct Present {
 
 pub struct GpuScene {
     pub scene: Scene,
+    atlas: wgpu::Texture,
     bind_group: wgpu::BindGroup,
     instances: Option<wgpu::Buffer>,
     polygons: Option<wgpu::Buffer>,
@@ -500,6 +505,7 @@ impl Renderer {
             ghost,
             presents: Vec::new(),
             frame: FramePlan::default(),
+            session_frame: SessionFrame::default(),
             timing: None,
         }
     }
@@ -658,7 +664,9 @@ impl Renderer {
             layers.resize(2, &[]);
         }
         let atlas = self.upload_texture("atlas", INDEX_FORMAT, size, size, &layers, size);
+        let layer_count = layers.len();
         scene.atlas_layers = Vec::new();
+        scene.packer.add_layers(layer_count);
         let atlas_view = atlas.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
@@ -709,8 +717,49 @@ impl Renderer {
                 .and_then(|p| buffer("level instances", bytemuck::cast_slice(&p.instances))),
             polygons: buffer("polygons", bytemuck::cast_slice(&scene.polygon_vertices)),
             scene,
+            atlas,
             bind_group,
         }
+    }
+
+    // Gives the bikes with shirt `index` (world::Bike::shirt, a session's bike) `shirt`, or
+    // the LGR's body for None, without building the scene again. Fails when the atlas has no
+    // room left for it, and then the scene has to be built with it.
+    pub fn set_shirt(
+        &self,
+        scene: &mut GpuScene,
+        index: usize,
+        shirt: Option<&Pic8>,
+    ) -> Result<(), RenderError> {
+        let (Some(rect), Some(pic)) = (scene.scene.place_shirt(index, shirt)?, shirt) else {
+            return Ok(());
+        };
+        let (w, h) = (rect.width as usize, rect.height as usize);
+        let pixels: Vec<u8> = (0..h).flat_map(|y| &pic.row(y)[..w]).copied().collect();
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &scene.atlas,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: rect.x,
+                    y: rect.y,
+                    z: rect.layer,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(rect.width),
+                rows_per_image: Some(rect.height),
+            },
+            wgpu::Extent3d {
+                width: rect.width,
+                height: rect.height,
+                depth_or_array_layers: 1,
+            },
+        );
+        Ok(())
     }
 
     pub fn create_targets(&self, width: u32, height: u32) -> Targets {
@@ -827,6 +876,7 @@ impl Renderer {
         self.queue.submit([encoder.finish()]);
     }
 
+    // Draws a replay's frame: its riders, then its ghosts
     pub fn render(
         &mut self,
         scene: &GpuScene,
@@ -836,9 +886,28 @@ impl Renderer {
         options: &RenderOptions,
         output: Output,
     ) -> Result<(), RenderError> {
+        let mut frame = std::mem::take(&mut self.session_frame);
+        frame.build(session, views);
+        let world = frame.world(session);
+        let views: Vec<View> = frame.views().collect();
+        let drawn = self.render_world(scene, targets, &world, &views, options, output);
+        self.session_frame = frame;
+        drawn
+    }
+
+    // Draws `views` of `world`, whatever it comes from
+    pub fn render_world(
+        &mut self,
+        scene: &GpuScene,
+        targets: &Targets,
+        world: &World,
+        views: &[View],
+        options: &RenderOptions,
+        output: Output,
+    ) -> Result<(), RenderError> {
         let s = &scene.scene;
         let size = (targets.width, targets.height);
-        plan(&mut self.frame, s, session, views, options, size)?;
+        plan(&mut self.frame, s, world, views, options, size)?;
         self.queue
             .write_buffer(&self.uniforms, 0, &self.frame.uniforms);
         upload(

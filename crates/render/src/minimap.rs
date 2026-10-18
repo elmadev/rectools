@@ -3,8 +3,9 @@
 // 640x480 and grow with the view like the timer.
 
 use crate::instance::{Instance, mode, snap};
+use crate::world::{View, World};
 use elma_formats::lev::ObjectType;
-use replay::{Session, Vec2};
+use replay::Vec2;
 
 #[derive(Debug, Clone)]
 pub struct Minimap {
@@ -158,29 +159,29 @@ fn ring(placement: &Placement, r: Vec2, color: u8, out: &mut Vec<Instance>) {
     }
 }
 
-// The dots of the objects that are still there and the bikes, the followed one last
+// The dots of the objects that are still there in `view` and the bikes, the followed one last
 pub(crate) fn icons(
     minimap: &Minimap,
     placement: &Placement,
-    session: &Session,
-    followed: Vec2,
-    active: &dyn Fn(usize) -> bool,
-    time: f64,
+    world: &World,
+    view: &View,
     out: &mut Vec<Instance>,
 ) {
-    let hide_exit = session.riders.len() > 1 && session.flagtag;
-    for (i, object) in session.objects.iter().enumerate() {
-        if !active(i) || (object.kind == ObjectType::Exit && hide_exit) {
+    for (i, object) in world.objects.iter().enumerate() {
+        if !view.object_there(i, object) || (object.kind == ObjectType::Exit && world.hide_exit) {
             continue;
         }
         if let Some(&(_, color)) = minimap.objects.iter().find(|(k, _)| *k == object.kind) {
-            ring(placement, object.position(time), color, out);
+            ring(placement, object.position(world.time), color, out);
         }
     }
-    for rider in session.riders.iter().chain(&session.ghosts) {
-        if rider.pose.bike_r != followed {
-            ring(placement, rider.pose.bike_r, minimap.other_bike, out);
+    let followed = view.followed(world).map(|b| b.pose.bike_r);
+    for bike in world.bikes {
+        if Some(bike.pose.bike_r) != followed {
+            ring(placement, bike.pose.bike_r, minimap.other_bike, out);
         }
     }
-    ring(placement, followed, minimap.bike, out);
+    if let Some(followed) = followed {
+        ring(placement, followed, minimap.bike, out);
+    }
 }

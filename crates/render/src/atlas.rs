@@ -29,38 +29,107 @@ struct Layer {
     used_height: usize,
 }
 
-// Packs every palette-indexed image into the layers of one texture array
-pub struct AtlasBuilder {
+// Where the images of one texture array's layers are, and where there is room for more
+#[derive(Default)]
+pub struct Packer {
     size: usize,
     layers: Vec<Layer>,
+}
+
+// Packs every palette-indexed image into the layers of one texture array
+pub struct AtlasBuilder {
+    packer: Packer,
     pixels: Vec<Vec<u8>>,
 }
 
 impl AtlasBuilder {
     pub fn new(size: usize) -> AtlasBuilder {
         AtlasBuilder {
-            size,
-            layers: Vec::new(),
+            packer: Packer {
+                size,
+                layers: Vec::new(),
+            },
             pixels: Vec::new(),
         }
     }
 
     pub fn layer_size(&self) -> usize {
-        self.size
+        self.packer.size
     }
 
     pub fn add(&mut self, pic: &Pic8) -> AtlasRect {
-        let (w, h) = (pic.width.min(self.size), pic.height.min(self.size));
-        let rect = self.allocate(w, h);
+        let size = self.packer.size;
+        let (w, h) = (pic.width.min(size), pic.height.min(size));
+        let rect = self.packer.allocate(w, h);
+        if self.pixels.len() < self.packer.layers.len() {
+            self.pixels.push(vec![0; size * size]);
+        }
         let layer = &mut self.pixels[rect.layer as usize];
         for y in 0..h {
-            let dst = (rect.y as usize + y) * self.size + rect.x as usize;
+            let dst = (rect.y as usize + y) * size + rect.x as usize;
             layer[dst..dst + w].copy_from_slice(&pic.row(y)[..w]);
         }
         rect
     }
 
+    // The layers' pixels, and the packer to find room in them for more images
+    pub fn finish(mut self) -> (Vec<Vec<u8>>, Packer) {
+        if self.pixels.is_empty() {
+            let size = self.packer.size;
+            self.pixels.push(vec![0; size * size]);
+        }
+        self.packer.add_layers(self.pixels.len());
+        (self.pixels, self.packer)
+    }
+
+    pub fn into_layers(self) -> Vec<Vec<u8>> {
+        self.finish().0
+    }
+}
+
+impl Packer {
+    // Empty layers up to `count`, as the texture has
+    pub fn add_layers(&mut self, count: usize) {
+        while self.layers.len() < count {
+            self.layers.push(Layer {
+                shelves: Vec::new(),
+                used_height: 0,
+            });
+        }
+    }
+
+    // Room for a `w` by `h` image in the layers there are, if any is left
+    pub fn find_room(&mut self, w: usize, h: usize) -> Option<AtlasRect> {
+        if w >= self.size || h >= self.size {
+            return None;
+        }
+        self.fit(w, h)
+    }
+
+    // Room for a `w` by `h` image in the layers there are, or else in a new one
     fn allocate(&mut self, w: usize, h: usize) -> AtlasRect {
+        if let Some(rect) = self.fit(w, h) {
+            return rect;
+        }
+        let (pw, ph) = ((w + 1).min(self.size), (h + 1).min(self.size));
+        self.layers.push(Layer {
+            shelves: vec![Shelf {
+                y: 0,
+                height: ph,
+                x: pw,
+            }],
+            used_height: ph,
+        });
+        AtlasRect {
+            layer: self.layers.len() as u32 - 1,
+            x: 0,
+            y: 0,
+            width: w as u32,
+            height: h as u32,
+        }
+    }
+
+    fn fit(&mut self, w: usize, h: usize) -> Option<AtlasRect> {
         // One texel of padding keeps neighbouring images apart
         let (pw, ph) = ((w + 1).min(self.size), (h + 1).min(self.size));
         for (index, layer) in self.layers.iter_mut().enumerate() {
@@ -74,7 +143,7 @@ impl AtlasBuilder {
                         height: h as u32,
                     };
                     shelf.x += pw;
-                    return rect;
+                    return Some(rect);
                 }
             }
             if layer.used_height + ph <= self.size {
@@ -85,38 +154,16 @@ impl AtlasBuilder {
                     x: pw,
                 });
                 layer.used_height += ph;
-                return AtlasRect {
+                return Some(AtlasRect {
                     layer: index as u32,
                     x: 0,
                     y: y as u32,
                     width: w as u32,
                     height: h as u32,
-                };
+                });
             }
         }
-        self.layers.push(Layer {
-            shelves: vec![Shelf {
-                y: 0,
-                height: ph,
-                x: pw,
-            }],
-            used_height: ph,
-        });
-        self.pixels.push(vec![0; self.size * self.size]);
-        AtlasRect {
-            layer: self.layers.len() as u32 - 1,
-            x: 0,
-            y: 0,
-            width: w as u32,
-            height: h as u32,
-        }
-    }
-
-    pub fn into_layers(self) -> Vec<Vec<u8>> {
-        if self.pixels.is_empty() {
-            return vec![vec![0; self.size * self.size]];
-        }
-        self.pixels
+        None
     }
 }
 

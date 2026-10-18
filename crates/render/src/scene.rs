@@ -1,5 +1,5 @@
 use crate::across::{self, AcrossSprites};
-use crate::atlas::{AtlasBuilder, AtlasRect};
+use crate::atlas::{AtlasBuilder, AtlasRect, Packer};
 use crate::bike::{BikeDraw, BikeSprites, Sprite, draw_bike};
 use crate::camera::bounds;
 use crate::grass::{self, GRASS_DISTANCE, Piece, QGRASS_MARGIN, QUPDOWN_MARGIN};
@@ -8,11 +8,12 @@ use crate::instance::{
 };
 use crate::minimap::Minimap;
 use crate::plan::RenderError;
+use crate::world::{Bike, DrawnBike, View, World};
 use elma_formats::Graphics;
 use elma_formats::lev::{Clipping, Gravity, Level, ObjectType};
 use elma_formats::lgr::{ANIM_WIDTH, Anim, BikePics, Image, Lgr};
 use elma_formats::pic::{Pic8, decode_bmp};
-use replay::{LevelObject, Rider, Session, Vec2};
+use replay::{LevelObject, Vec2};
 use std::ops::Range;
 
 const MARGIN_X: f64 = 10000.0 / M2P;
@@ -22,6 +23,8 @@ const CANVAS_SAFETY_LEFT: i32 = 120;
 const CANVAS_SAFETY_RIGHT: i32 = 50;
 const GRAVITY_ARROW_COLOR: u8 = 0x19;
 const GRAVITY_ARROW_BMP: &[u8] = include_bytes!("../assets/gravarrow.bmp");
+// The largest shirt, as elma_formats::pic::decode_shirt takes them
+const SHIRT_CELL: (usize, usize) = (152, 101);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SceneOptions {
@@ -66,8 +69,11 @@ pub struct Sprites {
     // Up, down, left, right, as they appear on screen
     // The picture of the down arrow, which the others are made from as they are drawn
     pub arrows: Option<(AtlasRect, u8)>,
-    // Indexed like the session's riders followed by its ghosts
+    // By world::Bike::shirt, which is the session's riders followed by its ghosts
     pub shirts: Vec<Option<Sprite>>,
+    // Room in the atlas taken for each shirt given after the scene was built, which the next
+    // one given in its place goes in when it fits
+    pub shirt_cells: Vec<Option<AtlasRect>>,
 }
 
 // A level and its graphics, ready for the GPU: what both games draw, and what only one does
@@ -87,6 +93,8 @@ pub struct Scene {
     pub qframe: TextureRef,
     pub minimap: Minimap,
     pub look: Look,
+    // Where there is room left in the atlas
+    pub(crate) packer: Packer,
 }
 
 // What the bikes, objects and sky are drawn with
@@ -197,6 +205,53 @@ impl Scene {
             Look::Across(_) => None,
         }
     }
+
+    // Where shirt `index` goes in the atlas once the scene is built: where the shirt given
+    // before it went, or room left in the atlas. None when there is nothing to write, for no
+    // shirt or Across, which has none.
+    pub(crate) fn place_shirt(
+        &mut self,
+        index: usize,
+        shirt: Option<&Pic8>,
+    ) -> Result<Option<AtlasRect>, RenderError> {
+        let Scene { look, packer, .. } = self;
+        let Look::Elma(elma) = look else {
+            return Ok(None);
+        };
+        let sprites = &mut elma.sprites;
+        if sprites.shirts.len() <= index {
+            sprites.shirts.resize(index + 1, None);
+        }
+        let Some(pic) = shirt else {
+            sprites.shirts[index] = None;
+            return Ok(None);
+        };
+        if sprites.shirt_cells.len() <= index {
+            sprites.shirt_cells.resize(index + 1, None);
+        }
+        let (w, h) = (pic.width, pic.height);
+        let fits = |cell: &AtlasRect| w <= cell.width as usize && h <= cell.height as usize;
+        let cell = match sprites.shirt_cells[index].filter(fits) {
+            Some(cell) => cell,
+            // Room for any shirt, so the next one can take its place
+            None => {
+                let (cw, ch) = (w.max(SHIRT_CELL.0), h.max(SHIRT_CELL.1));
+                let cell = packer.find_room(cw, ch).ok_or(RenderError::AtlasFull)?;
+                sprites.shirt_cells[index] = Some(cell);
+                cell
+            }
+        };
+        let rect = AtlasRect {
+            width: w as u32,
+            height: h as u32,
+            ..cell
+        };
+        sprites.shirts[index] = Some(Sprite {
+            rect,
+            transparency: pic.get(0, 0),
+        });
+        Ok(Some(rect))
+    }
 }
 
 // The bounds of the level's ground, y pointing up like the bikes
@@ -305,6 +360,7 @@ impl Scene {
                 .iter()
                 .map(|s| s.as_ref().map(|pic| add_sprite(&mut atlas, pic)))
                 .collect(),
+            shirt_cells: Vec::new(),
         };
 
         // Canvas origin at zoom 1: the level's bounding box plus a margin, snapped to the middle
@@ -436,9 +492,11 @@ impl Scene {
             options.default_sky,
         );
 
+        let atlas_size = atlas.layer_size();
+        let (atlas_layers, packer) = atlas.finish();
         Ok(Scene {
-            atlas_size: atlas.layer_size(),
-            atlas_layers: atlas.into_layers(),
+            atlas_size,
+            atlas_layers,
             palette: lgr.palette,
             timer_map: lgr.timer_palette_map(),
             canvas_origin: origin,
@@ -460,6 +518,7 @@ impl Scene {
                 canvas_corner,
                 canvas_right: max.x + MARGIN_X,
             })),
+            packer,
         })
     }
 }
@@ -611,56 +670,45 @@ impl Default for DynamicOptions {
     }
 }
 
-// By object, whether `ghost` has taken it by the session's time
-pub(crate) fn taken_by(ghost: &Rider, session: &Session) -> Vec<bool> {
-    let mut taken = vec![false; session.objects.len()];
-    for i in ghost.touched(session.time) {
-        if let Some(t) = taken.get_mut(i) {
-            *t = true;
-        }
-    }
-    taken
-}
-
-// Objects and bikes of the view following main rider `follow`, or ghost `ghost` when it
-// follows one: then the apples it has taken are gone instead of the main riders', and it is
-// drawn over every other bike. Returns where the other ghosts are in `out`.
-// The objects are where the game puts them at `zoom`, by their index in `out` in `placed`.
-#[allow(clippy::too_many_arguments)]
-pub fn dynamic_instances(
+// Objects and bikes of `view`: the objects that are there in it, then its bikes in order.
+// Returns where the translucent ones are in `out`.
+// The objects are where the game puts them at the view's zoom, by their index in `out` in
+// `placed`.
+pub(crate) fn dynamic_instances(
     scene: &Scene,
-    session: &Session,
-    follow: usize,
-    ghost: Option<usize>,
+    world: &World,
+    view: &View,
     options: &DynamicOptions,
-    zoom: f64,
     out: &mut Vec<Instance>,
     placed: &mut Vec<(usize, CanvasRect)>,
 ) -> std::ops::Range<u32> {
-    let time = session.time;
-    let taken_by_ghost = ghost
-        .and_then(|g| session.ghosts.get(g))
-        .map(|g| taken_by(g, session));
-    let active = |i: usize, object: &LevelObject| match &taken_by_ghost {
-        Some(taken) => !taken[i],
-        None => object.active,
-    };
+    let time = world.time;
+    let active = |i: usize, object: &LevelObject| view.object_there(i, object);
     let (sprites, elma) = match &scene.look {
         Look::Elma(elma) => (&elma.sprites, elma),
         Look::Across(sprites) => {
-            return across_instances(sprites, session, follow, ghost, options, &active, out);
+            across::object_instances(
+                sprites,
+                world.objects,
+                active,
+                time,
+                options.animated_objects,
+                out,
+            );
+            return bike_instances(world, view, out, |bike, _, out| {
+                across::draw_bike(&bike.pose, &bike.animation, &sprites.bike, out);
+            });
         }
     };
+    let zoom = view.zoom;
     let origin = scene.canvas_origin;
     // The game's canvas at this zoom, which it puts the objects on in whole pixels
     let ppm = crate::camera::pixels_per_meter(zoom);
     let canvas = elma.canvas_origin(ppm);
     let object_size = (ANIM_WIDTH as f64 * zoom) as i32;
-    let multiplayer = session.riders.len() > 1;
-    let hide_exit = multiplayer && session.flagtag;
     let size = ANIM_WIDTH as f64 / M2P;
 
-    for (i, object) in session.objects.iter().enumerate() {
+    for (i, object) in world.objects.iter().enumerate() {
         let (frames, transparency) = match object.kind {
             ObjectType::Start => continue,
             ObjectType::Food if !active(i, object) => continue,
@@ -668,7 +716,7 @@ pub fn dynamic_instances(
                 let (frames, t) = &sprites.food[object.animation as usize % sprites.food.len()];
                 (frames, *t)
             }
-            ObjectType::Exit if hide_exit => continue,
+            ObjectType::Exit if world.hide_exit => continue,
             ObjectType::Exit => (&sprites.exit, sprites.exit_transparency),
             ObjectType::Killer => (&sprites.killer, sprites.killer_transparency),
         };
@@ -741,126 +789,41 @@ pub fn dynamic_instances(
         }
     }
 
-    // The followed bike uses the first bike pictures, everyone else the second
-    let (own_bike, other_bike) = if follow == 0 { (0, 1) } else { (1, 0) };
-    let shirt = |index: usize| sprites.shirts.get(index).copied().flatten();
-    let has_flag = |rider: usize| {
-        if !(multiplayer && session.flagtag) {
-            return false;
-        }
-        let a_has_flag = session
-            .riders
-            .last()
-            .map(|r| r.pose.flagtag_a)
-            .unwrap_or(false);
-        let immunity = session
-            .riders
-            .last()
-            .map(|r| r.pose.flagtag_immunity)
-            .unwrap_or(false);
-        if (rider == 0) == a_has_flag {
-            return true;
-        }
-        immunity && (time * 30.0) as i64 % 2 != 0
-    };
-
-    let draw_ghost = |i: usize, out: &mut Vec<Instance>| {
-        let ghost = &session.ghosts[i];
+    let shirt = |index: Option<usize>| index.and_then(|i| sprites.shirts.get(i).copied().flatten());
+    bike_instances(world, view, out, |bike, drawn, out| {
         draw_bike(
             &BikeDraw {
-                pose: &ghost.pose,
-                animation: &ghost.animation,
-                sprites: &sprites.bikes[other_bike],
-                shirt: shirt(session.riders.len() + i),
-                flag: None,
+                pose: &bike.pose,
+                animation: &bike.animation,
+                sprites: &sprites.bikes[drawn.pictures.min(1)],
+                shirt: shirt(bike.shirt),
+                flag: drawn.flag.then_some(sprites.flag),
             },
             out,
         );
-    };
-    let draw_rider = |index: usize, bike: usize, shirt: Option<Sprite>, out: &mut Vec<Instance>| {
-        let rider = &session.riders[index];
-        draw_bike(
-            &BikeDraw {
-                pose: &rider.pose,
-                animation: &rider.animation,
-                sprites: &sprites.bikes[bike],
-                shirt,
-                flag: has_flag(index).then_some(sprites.flag),
-            },
-            out,
-        );
-    };
-    let draw_riders = |out: &mut Vec<Instance>| {
-        // Each rider in their own shirt, whichever view follows them
-        if multiplayer {
-            draw_rider(1 - follow, other_bike, shirt(1 - follow), out);
-        }
-        draw_rider(follow, own_bike, shirt(follow), out);
-    };
-    let followed_ghost = ghost.filter(|&i| i < session.ghosts.len());
-    let ghosts_start = out.len() as u32;
-    for i in (0..session.ghosts.len()).filter(|&i| Some(i) != ghost) {
-        draw_ghost(i, out);
-    }
-    // Following a merged replay makes the main replay's bikes ghosts too
-    if followed_ghost.is_some() {
-        draw_riders(out);
-    }
-    let ghosts = ghosts_start..out.len() as u32;
-    match followed_ghost {
-        // On top, drawn like any bike
-        Some(i) => draw_ghost(i, out),
-        None => draw_riders(out),
-    }
-    ghosts
+    })
 }
 
-// Objects and bikes of an Across view: there is no multiplayer, flag or shirts
-fn across_instances(
-    sprites: &AcrossSprites,
-    session: &Session,
-    follow: usize,
-    ghost: Option<usize>,
-    options: &DynamicOptions,
-    active: &dyn Fn(usize, &LevelObject) -> bool,
+// The view's bikes with `draw`, in order, returning where its translucent ones are in `out`
+fn bike_instances(
+    world: &World,
+    view: &View,
     out: &mut Vec<Instance>,
+    draw: impl Fn(&Bike, &DrawnBike, &mut Vec<Instance>),
 ) -> std::ops::Range<u32> {
-    across::object_instances(
-        sprites,
-        &session.objects,
-        active,
-        session.time,
-        options.animated_objects,
-        out,
-    );
-    let draw = |rider: &replay::Rider, out: &mut Vec<Instance>| {
-        across::draw_bike(&rider.pose, &rider.animation, &sprites.bike, out);
-    };
-    let draw_riders = |out: &mut Vec<Instance>| {
-        for (i, rider) in session.riders.iter().enumerate() {
-            if i != follow {
-                draw(rider, out);
+    let count = view.bikes.len();
+    let start = view.translucent.start.min(count);
+    let end = view.translucent.end.clamp(start, count);
+    let draw_all = |drawn: &[DrawnBike], out: &mut Vec<Instance>| {
+        for d in drawn {
+            if let Some(bike) = world.bikes.get(d.bike) {
+                draw(bike, d, out);
             }
         }
-        if let Some(rider) = session.riders.get(follow) {
-            draw(rider, out);
-        }
+        out.len() as u32
     };
-    let followed_ghost = ghost.and_then(|i| session.ghosts.get(i));
-    let ghosts_start = out.len() as u32;
-    for (i, g) in session.ghosts.iter().enumerate() {
-        if Some(i) != ghost {
-            draw(g, out);
-        }
-    }
-    // Following a merged replay makes the main replay's bike a ghost too
-    if followed_ghost.is_some() {
-        draw_riders(out);
-    }
-    let ghosts = ghosts_start..out.len() as u32;
-    match followed_ghost {
-        Some(g) => draw(g, out),
-        None => draw_riders(out),
-    }
-    ghosts
+    let translucent_start = draw_all(&view.bikes[..start], out);
+    let translucent_end = draw_all(&view.bikes[start..end], out);
+    draw_all(&view.bikes[end..], out);
+    translucent_start..translucent_end
 }

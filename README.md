@@ -19,7 +19,7 @@ Windows and Linux builds of recview and rec2vid are artifacts of each CI run, an
 | --- | --- |
 | `elma-formats` | Reads the games' files: replays, levels, LGRs, `.res`, `.wav`, `.bmp` |
 | `replay` | Plays a replay against its level |
-| `render` | The wgpu renderer, native and on the web |
+| `render` | The wgpu renderer, native and on the web: a replay's frame, or any bikes and objects given as a `World` |
 | `audio` | The game's sound mixer |
 | `game-data` | Loads a replay and what it is drawn with from a game folder |
 | `player` | Playback, the camera, the settings and the keys, shared by recview and the web player |

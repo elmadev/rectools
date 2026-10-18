@@ -2,13 +2,14 @@
 // minimap it draws. It needs no GPU, so it can be tested, and gpu.rs only uploads the result
 // and encodes the passes.
 
-use crate::camera::{self, view_corner};
+use crate::camera::{self, world_view_corner};
 use crate::hud::{PixelRect, last_apple_rects, timer_rects};
 use crate::instance::{CanvasRect, Instance, mode, snap_to_pixel_center};
-use crate::options::{CameraMode, GhostStyle, RenderOptions, TextureZoom, ViewParams};
-use crate::scene::{Look, Scene, TextureRef, dynamic_instances, taken_by};
+use crate::options::{CameraMode, GhostStyle, RenderOptions, TextureZoom};
+use crate::scene::{Look, Scene, TextureRef, dynamic_instances};
+use crate::world::{View, World};
 use bytemuck::{Pod, Zeroable};
-use replay::{Session, TIME_TO_CENTISECONDS, Vec2};
+use replay::Vec2;
 use std::ops::Range;
 
 pub(crate) const UNIFORM_STRIDE: u64 = 256;
@@ -98,6 +99,8 @@ pub enum RenderError {
     TooManyViews(usize),
     #[error("an image of {size} pixels is bigger than the GPU's largest texture, {max}")]
     ImageTooLarge { size: usize, max: usize },
+    #[error("no room is left in the atlas for another shirt: build the scene with it")]
+    AtlasFull,
 }
 
 // What a frame draws. Kept between frames so its buffers are reused.
@@ -123,15 +126,15 @@ pub struct FramePlan {
 
 fn view_uniform(
     scene: &Scene,
-    session: &Session,
-    params: &ViewParams,
+    world: &World,
+    params: &View,
     target_width: u32,
     options: &RenderOptions,
     front_grass: bool,
 ) -> ViewUniform {
     let [vx, vy, vw, vh] = params.viewport;
     let ppm = camera::pixels_per_meter(params.zoom);
-    let corner = view_corner(session, params, target_width);
+    let corner = world_view_corner(world, params, target_width);
     let canvas_corner = match &scene.look {
         Look::Elma(elma) => elma.canvas_corner,
         Look::Across(_) => scene.canvas_origin,
@@ -174,7 +177,7 @@ fn view_uniform(
 
 // Whether `views` cover every pixel of the target. Their edges cut it into cells that are
 // each inside a view or outside them all.
-fn covers(views: &[ViewParams], (width, height): (u32, u32)) -> bool {
+fn covers(views: &[View], (width, height): (u32, u32)) -> bool {
     let mut xs = vec![0, width];
     let mut ys = vec![0, height];
     for v in views {
@@ -200,8 +203,8 @@ fn covers(views: &[ViewParams], (width, height): (u32, u32)) -> bool {
 pub fn plan(
     frame: &mut FramePlan,
     scene: &Scene,
-    session: &Session,
-    views: &[ViewParams],
+    world: &World,
+    views: &[View],
     options: &RenderOptions,
     (width, height): (u32, u32),
 ) -> Result<(), RenderError> {
@@ -230,7 +233,7 @@ pub fn plan(
     let front_grass =
         !options.dynamic.pictures_in_background && scene.pictures().is_some_and(|p| p.front_grass);
     for (i, params) in views.iter().enumerate() {
-        let u = view_uniform(scene, session, params, width, options, front_grass);
+        let u = view_uniform(scene, world, params, width, options, front_grass);
         write_uniform(i, &u);
 
         // Ground and sky cover the whole view, a meter beyond each edge
@@ -264,65 +267,33 @@ pub fn plan(
             ),
         }
         let dynamic_start = scratch.len() as u32;
-        // Following a ghost draws the main bikes as when following the first, and the
-        // apples and timer are the ghost's
-        let count = camera::bike_count(session);
-        let ghost_index = (params.follow.min(count - 1)).checked_sub(session.riders.len());
-        let followed_ghost = ghost_index.map(|i| &session.ghosts[i]);
-        let rider = if ghost_index.is_some() {
-            0
-        } else {
-            params.follow
-        };
         let ghosts = dynamic_instances(
             scene,
-            session,
-            rider,
-            ghost_index,
+            world,
+            params,
             &options.dynamic,
-            params.zoom,
             scratch,
             &mut frame.placed,
         );
-        // The timer stops when the followed replay ends, even if other bikes go on, and then
-        // shows its time
-        let shown = match followed_ghost {
-            Some(ghost) => ghost.timer_centiseconds(session.time),
-            None => session.main_timer_centiseconds(session.time),
-        };
 
         let timer_start = timer_data.len() as u32;
-        if params.timer {
-            let centiseconds = |t: f64| (t * TIME_TO_CENTISECONDS) as i64;
-            let flag_time = if rider == 0 {
-                session.flag_time_a
-            } else {
-                session.flag_time_b
-            };
-            let flagtag =
-                (session.flagtag && session.riders.len() > 1).then(|| centiseconds(flag_time));
+        if let Some(timer) = params.timer {
             let rects = timer_rects(
                 params.viewport[2] as i32,
                 params.viewport[3] as i32,
-                params.best_time,
-                flagtag,
-                shown,
+                timer.best,
+                timer.flagtag,
+                timer.centiseconds,
                 matches!(scene.look, Look::Across(_)),
                 hud_scale,
             );
             timer_data.extend(rects.iter().map(|&r| HudRect::new(r, TIMER_COLOR)));
         }
-        if params.last_apple_time && !matches!(scene.look, Look::Across(_)) {
-            let (apples, last) = session.apples_taken(camera::followed(session, params.follow));
-            if let (true, Some(last)) = (apples > 0, last) {
-                let rects = last_apple_rects(
-                    params.viewport[2] as i32,
-                    apples,
-                    (last * TIME_TO_CENTISECONDS) as i64,
-                    hud_scale,
-                );
-                timer_data.extend(rects.iter().map(|r| HudRect::new(r.rect, r.color as u32)));
-            }
+        if let Some((apples, last)) = params.last_apple
+            && !matches!(scene.look, Look::Across(_))
+        {
+            let rects = last_apple_rects(params.viewport[2] as i32, apples, last, hud_scale);
+            timer_data.extend(rects.iter().map(|r| HudRect::new(r.rect, r.color as u32)));
         }
         // From the view's bottom left to the target's
         let [vx, vy, _, vh] = params.viewport;
@@ -332,7 +303,8 @@ pub fn plan(
         }
         let dynamic_end = scratch.len() as u32;
         let minimap = if params.minimap {
-            let rider = camera::followed(session, params.follow);
+            // Without a bike to follow, as if at the level's origin facing left
+            let rider = params.followed(world).copied().unwrap_or_default();
             let phase = rider.animation.camera_turning.turn_phase;
             let ppm_view = u.pixels_per_meter as f64;
             let view_corner = Vec2::new(u.corner[0] as f64, u.corner[1] as f64);
@@ -375,22 +347,7 @@ pub fn plan(
                 scratch.push(crate::minimap::fill(&p, m.ground, false));
                 scratch.push(crate::minimap::fill(&p, m.sky, false));
                 let icons_start = scratch.len() as u32;
-                // Following a ghost, the apples it has taken are gone instead of the main
-                // riders', as in the view
-                let taken = followed_ghost.map(|g| taken_by(g, session));
-                let active = |i: usize| match &taken {
-                    Some(taken) => !taken[i],
-                    None => session.objects[i].active,
-                };
-                crate::minimap::icons(
-                    m,
-                    &p,
-                    session,
-                    rider.pose.bike_r,
-                    &active,
-                    session.time,
-                    scratch,
-                );
+                crate::minimap::icons(m, &p, world, params, scratch);
                 MinimapDraw {
                     inner: p.inner,
                     border: p.border,
@@ -456,14 +413,43 @@ pub fn plan(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::options::ViewParams;
     use crate::scene::SceneOptions;
+    use crate::world::{Bike, DrawnBike, SessionFrame};
     use elma_formats::Graphics;
     use elma_formats::lev::{
         Gravity, Level, Object, ObjectType, Polygon, TopTens, Vec2 as LevVec2,
     };
     use elma_formats::lgr::Lgr;
-    use replay::Settings;
+    use replay::{Session, Settings};
     use std::sync::Arc;
+
+    // Plans `views` of a replay as Renderer::render does
+    fn plan_session(
+        frame: &mut FramePlan,
+        scene: &Scene,
+        session: &Session,
+        views: &[ViewParams],
+        options: &RenderOptions,
+        size: (u32, u32),
+    ) -> Result<(), RenderError> {
+        let mut built = SessionFrame::default();
+        built.build(session, views);
+        let views: Vec<View> = built.views().collect();
+        plan(frame, scene, &built.world(session), &views, options, size)
+    }
+
+    fn session_uniform(
+        scene: &Scene,
+        session: &Session,
+        params: &ViewParams,
+        options: &RenderOptions,
+    ) -> ViewUniform {
+        let mut built = SessionFrame::default();
+        built.build(session, std::slice::from_ref(params));
+        let view = built.views().next().unwrap();
+        view_uniform(scene, &built.world(session), &view, 640, options, false)
+    }
 
     fn level() -> Level {
         let v = |x, y| LevVec2 { x, y };
@@ -523,7 +509,7 @@ mod tests {
 
     fn planned(scene: &Scene, session: &Session, views: &[ViewParams]) -> FramePlan {
         let mut frame = FramePlan::default();
-        plan(
+        plan_session(
             &mut frame,
             scene,
             session,
@@ -700,6 +686,109 @@ mod tests {
         }
     }
 
+    // A view of `bikes` drawn in order, as a game would ask for one, without a replay
+    fn world_view(bikes: &[DrawnBike], translucent: Range<usize>) -> View<'_> {
+        View {
+            viewport: [0, 0, 640, 480],
+            zoom: 1.0,
+            follow: 0,
+            camera: CameraMode::Classic,
+            camera_edge: None,
+            pan: Vec2::default(),
+            center: None,
+            bikes,
+            translucent,
+            objects: None,
+            timer: Some(crate::world::Timer {
+                centiseconds: 1234,
+                best: None,
+                flagtag: None,
+            }),
+            last_apple: Some((1, 500)),
+            minimap: true,
+        }
+    }
+
+    #[test]
+    fn a_world_without_bikes_draws_its_objects() {
+        let (scene, session) = setup(0);
+        let world = World {
+            time: 0.0,
+            bikes: &[],
+            objects: &session.objects,
+            hide_exit: false,
+        };
+        let mut frame = FramePlan::default();
+        let views = [world_view(&[], 0..0)];
+        plan(
+            &mut frame,
+            &scene,
+            &world,
+            &views,
+            &RenderOptions::default(),
+            (640, 480),
+        )
+        .unwrap();
+        let draw = &frame.views[0];
+        // The apple and the exit
+        assert_eq!(draw.dynamic.len(), 2);
+        assert!(draw.ghosts.is_empty());
+        assert!(!draw.timer.is_empty());
+        assert!(draw.minimap.is_some());
+    }
+
+    #[test]
+    fn the_translucent_bikes_are_where_the_view_says() {
+        let (scene, session) = setup(0);
+        let bike = Bike {
+            pose: session.riders[0].pose,
+            ..Bike::default()
+        };
+        let bikes = [bike; 3];
+        let world = World {
+            time: 0.0,
+            bikes: &bikes,
+            objects: &[],
+            hide_exit: false,
+        };
+        let drawn: Vec<DrawnBike> = (0..3)
+            .map(|bike| DrawnBike {
+                bike,
+                pictures: 1,
+                flag: false,
+            })
+            .collect();
+        let ranges = |translucent: Range<usize>| {
+            let mut frame = FramePlan::default();
+            let views = [world_view(&drawn, translucent)];
+            plan(
+                &mut frame,
+                &scene,
+                &world,
+                &views,
+                &RenderOptions::default(),
+                (640, 480),
+            )
+            .unwrap();
+            let draw = frame.views[0].clone();
+            (draw.dynamic, draw.ghosts)
+        };
+        let (dynamic, middle) = ranges(1..2);
+        let per_bike = dynamic.len() as u32 / 3;
+        assert_eq!(
+            middle,
+            dynamic.start + per_bike..dynamic.start + 2 * per_bike
+        );
+        // An empty range still sits between the bikes, which are drawn around it
+        let (dynamic, none) = ranges(2..2);
+        assert_eq!(
+            none,
+            dynamic.start + 2 * per_bike..dynamic.start + 2 * per_bike
+        );
+        let (dynamic, all) = ranges(0..9);
+        assert_eq!(all, dynamic);
+    }
+
     #[test]
     fn the_ghost_layer_is_kept_only_for_translucent_ghosts() {
         let kept = |ghosts: usize, style: GhostStyle| {
@@ -710,7 +799,7 @@ mod tests {
                 ..Default::default()
             };
             let views = [view(0, false, false)];
-            plan(&mut frame, &scene, &session, &views, &options, (640, 480)).unwrap();
+            plan_session(&mut frame, &scene, &session, &views, &options, (640, 480)).unwrap();
             let at = BACKGROUND_SLOT * UNIFORM_STRIDE as usize;
             let u: &ViewUniform =
                 bytemuck::from_bytes(&frame.uniforms[at..at + std::mem::size_of::<ViewUniform>()]);
@@ -735,6 +824,39 @@ mod tests {
                 max: 4096
             })
         );
+    }
+
+    #[test]
+    fn a_shirt_given_later_takes_room_left_in_the_atlas() {
+        use elma_formats::pic::Pic8;
+        let graphics = Graphics::Elma(Box::new(Lgr::stub()));
+        let options = SceneOptions::default();
+        let mut scene = Scene::new(&graphics, &level(), &[], &options, 2048).unwrap();
+        let shirts = |scene: &Scene| match &scene.look {
+            Look::Elma(elma) => elma.sprites.shirts.clone(),
+            Look::Across(_) => unreachable!(),
+        };
+        let shirt = Pic8::filled(152, 101, 7);
+        let first = scene.place_shirt(3, Some(&shirt)).unwrap().unwrap();
+        assert_eq!(shirts(&scene).len(), 4);
+        assert_eq!(shirts(&scene)[3].map(|s| s.rect), Some(first));
+        // A smaller one goes where it was
+        let again = scene
+            .place_shirt(3, Some(&Pic8::filled(149, 90, 8)))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (again.layer, again.x, again.y),
+            (first.layer, first.x, first.y)
+        );
+        assert_eq!((again.width, again.height), (149, 90));
+        assert_eq!(scene.place_shirt(3, None), Ok(None));
+        assert!(shirts(&scene)[3].is_none());
+        // Until the atlas is full
+        let full = (4..2000)
+            .map(|i| scene.place_shirt(i, Some(&shirt)))
+            .find(Result::is_err);
+        assert_eq!(full, Some(Err(RenderError::AtlasFull)));
     }
 
     #[test]
@@ -845,7 +967,7 @@ mod tests {
         let mut frame = FramePlan::default();
         let options = RenderOptions::default();
         assert_eq!(
-            plan(&mut frame, &scene, &session, &views, &options, (640, 480)),
+            plan_session(&mut frame, &scene, &session, &views, &options, (640, 480)),
             Err(RenderError::TooManyViews(MAX_VIEWS + 1))
         );
     }
@@ -856,9 +978,9 @@ mod tests {
         let mut frame = FramePlan::default();
         let views = [view(0, true, true)];
         let options = RenderOptions::default();
-        plan(&mut frame, &scene, &session, &views, &options, (640, 480)).unwrap();
+        plan_session(&mut frame, &scene, &session, &views, &options, (640, 480)).unwrap();
         let (instances, capacity) = (frame.instances.len(), frame.instances.capacity());
-        plan(&mut frame, &scene, &session, &views, &options, (640, 480)).unwrap();
+        plan_session(&mut frame, &scene, &session, &views, &options, (640, 480)).unwrap();
         assert_eq!(frame.instances.len(), instances);
         assert_eq!(frame.instances.capacity(), capacity);
     }
@@ -875,7 +997,7 @@ mod tests {
                 zoom_textures,
                 ..Default::default()
             };
-            view_uniform(&scene, &session, &params, 640, &options, false).texture_scale
+            session_uniform(&scene, &session, &params, &options).texture_scale
         };
         assert_eq!(scale(true), 2.0);
         assert_eq!(scale(false), 1.0);
@@ -894,7 +1016,7 @@ mod tests {
                 textures,
                 ..Default::default()
             };
-            let u = view_uniform(&scene, &session, &params, 640, &options, false);
+            let u = session_uniform(&scene, &session, &params, &options);
             let pixels = |a: f32, b: f32| (a as f64 - b as f64) * u.pixels_per_meter as f64;
             for axis in 0..2 {
                 let p = pixels(u.level_corner[axis], u.canvas_origin[axis]);
