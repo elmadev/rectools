@@ -23,6 +23,8 @@ pub struct Output<'a> {
 pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
+    // A pixel of no translucent ghost, for the present pass of frames without them
+    no_ghosts: wgpu::Texture,
     shader: wgpu::ShaderModule,
     uniforms: wgpu::Buffer,
     scene_layout: wgpu::BindGroupLayout,
@@ -91,6 +93,9 @@ pub struct Targets {
     depth_view: wgpu::TextureView,
     layers_group: wgpu::BindGroup,
     present_group: wgpu::BindGroup,
+    // The present pass's without the translucent ghosts' layer, which isn't kept when there
+    // are none: bound, a layer thrown away is cleared by wgpu again before each frame
+    present_group_without_ghosts: wgpu::BindGroup,
 }
 
 // A texture of `width` by `height` fill map texels, and the fills' bind group for it
@@ -530,7 +535,36 @@ impl Renderer {
             translucent_ghosts.then(|| make(bikes("translucent ghosts", "fs_ghost", false)));
 
         let (fill_maps, fill_map_group) = fill_map_texture(&device, &texture_layout, 1, 1);
+        let no_ghosts = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("no ghosts"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: GHOST_FORMAT,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            no_ghosts.as_image_copy(),
+            &[0, 0],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(2),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
         Renderer {
+            no_ghosts,
             fill_maps,
             fill_map_group,
             dynamic_buffer: vertex_buffer(&device, "dynamic instances", 64 * 1024),
@@ -874,6 +908,14 @@ impl Renderer {
                 &[
                     texture_binding(0, &index_view),
                     texture_binding(1, &ghost_view),
+                ],
+            ),
+            present_group_without_ghosts: group(
+                "present without ghosts",
+                &self.present_layout,
+                &[
+                    texture_binding(0, &index_view),
+                    texture_binding(1, &self.no_ghosts.create_view(&Default::default())),
                 ],
             ),
             index_view,
@@ -1222,7 +1264,12 @@ impl Renderer {
                 &scene.bind_group,
                 &[(BACKGROUND_SLOT as u64 * UNIFORM_STRIDE) as u32],
             );
-            pass.set_bind_group(1, &targets.present_group, &[]);
+            let present_group = if self.frame.translucent_ghosts {
+                &targets.present_group
+            } else {
+                &targets.present_group_without_ghosts
+            };
+            pass.set_bind_group(1, present_group, &[]);
             pass.draw(0..3, 0..1);
             if draws.iter().any(|d| !d.timer.is_empty()) || !texts.is_empty() {
                 pass.set_pipeline(&present.timer);
