@@ -6,6 +6,7 @@ license-file.workspace = true
 publish = false
 
 [dependencies]
+elma-formats.workspace = true
 replay.workspace = true
 render.workspace = true
 game-data.workspace = true

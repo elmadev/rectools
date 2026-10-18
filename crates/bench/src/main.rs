@@ -1,5 +1,6 @@
 // Times how long a replay takes to open and how fast its frames draw, offscreen and without
 // vsync, so changes to the renderer can be compared
+use elma_formats::lev::ObjectType;
 use game_data::{GameFolder, Ghost};
 use render::camera::{self, AutoFrame};
 use render::wgpu;
@@ -15,10 +16,11 @@ use std::time::{Duration, Instant};
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
 const USAGE: &str = "\
-Usage: bench <rec> [options]
+Usage: bench <rec or lev> [options]
 
 Opens the replay and draws every frame at 60 fps of replay time as fast as the GPU goes,
-then prints how long opening took and the frame times.
+then prints how long opening took and the frame times. A level on its own is drawn with
+the camera going across it from one end to the other, in --frames frames (default: 600).
 
 Options:
   --data <dir>        game folder, as for rec2vid (default: .)
@@ -131,11 +133,17 @@ fn ms(d: Duration) -> f64 {
 fn run(opts: &Options) -> Result<(), String> {
     let start = Instant::now();
 
-    let folder = GameFolder::open_for(&opts.data, &opts.input).map_err(|e| e.to_string())?;
-    let no_ghosts: &[Ghost] = &[];
-    let mut loaded = folder
-        .load(&opts.input, "", no_ghosts, None)
-        .map_err(|e| e.to_string())?;
+    let level_only = opts.input.to_ascii_lowercase().ends_with(".lev");
+    let mut loaded = if level_only {
+        let folder = GameFolder::open(&opts.data).map_err(|e| e.to_string())?;
+        folder.load_level(&opts.input).map_err(|e| e.to_string())?
+    } else {
+        let folder = GameFolder::open_for(&opts.data, &opts.input).map_err(|e| e.to_string())?;
+        let no_ghosts: &[Ghost] = &[];
+        folder
+            .load(&opts.input, "", no_ghosts, None)
+            .map_err(|e| e.to_string())?
+    };
     if let Some(dir) = &opts.merge_dir {
         let replays =
             game_data::same_level_replays(dir, loaded.rec.level_id).map_err(|e| e.to_string())?;
@@ -213,6 +221,20 @@ fn run(opts: &Options) -> Result<(), String> {
         ..Default::default()
     };
 
+    // A level on its own: the camera goes across it at the height of the start
+    let frames = opts.frames.unwrap_or(600);
+    let sweep = level_only
+        .then(|| {
+            let (min, max) = camera::level_bounds(&loaded.level)?;
+            let start = loaded
+                .level
+                .objects
+                .iter()
+                .find(|o| o.kind == ObjectType::Start)?;
+            Some((min.x, max.x, -start.r.y))
+        })
+        .flatten();
+
     const FPS: f64 = 60.0;
     let mut auto_frame = AutoFrame::default();
     let mut cpu = Vec::new();
@@ -221,17 +243,22 @@ fn run(opts: &Options) -> Result<(), String> {
     // Each pass's times, in the order the passes first came
     let mut passes: Vec<(&'static str, Vec<Duration>)> = Vec::new();
     loop {
-        if opts.frames.is_some_and(|n| total.len() >= n) {
+        if (opts.frames.is_some() || level_only) && total.len() >= frames {
             break;
         }
         let frame_start = Instant::now();
         let time = total.len() as f64 * (MILLISECONDS_TO_PHYS_TIME * 1000.0) / FPS;
-        if session.step(time).done {
+        if session.step(time).done && !level_only {
             break;
+        }
+        let mut base = view;
+        if let Some((left, right, y)) = sweep {
+            let along = total.len() as f64 / (frames.max(2) - 1) as f64;
+            base.center = Some(replay::Vec2::new(left + (right - left) * along, y));
         }
         let views = camera::layout_views(
             &session,
-            view,
+            base,
             (opts.width, opts.height),
             true,
             opts.auto_zoom.then_some((&mut auto_frame, 1.0 / FPS)),
