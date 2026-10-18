@@ -471,8 +471,14 @@ impl Renderer {
         use wgpu::StencilOperation as S;
         let level_write = [target(INDEX_FORMAT, true), target(INDEX_FORMAT, true)];
         let level_none = [target(INDEX_FORMAT, false), target(INDEX_FORMAT, false)];
-        // The fills are drawn first, over layers just cleared to their own, 0
+        // The fills are drawn first, over layers just cleared to their own, 0. WebGL2 can't
+        // leave one target alone, as with translucent ghosts, so they write it there anyway.
         let index_only = [target(INDEX_FORMAT, true), target(INDEX_FORMAT, false)];
+        let fill_targets = if translucent_ghosts {
+            &index_only
+        } else {
+            &level_write
+        };
         let bikes_write = [target(INDEX_FORMAT, true), target(GHOST_FORMAT, true)];
         let ghosts_only = [target(INDEX_FORMAT, false), target(GHOST_FORMAT, true)];
         let level = |label, fs, write: bool, depth| PipelineDesc {
@@ -501,7 +507,7 @@ impl Renderer {
         let fill = make(PipelineDesc {
             vs: "vs_fill",
             layout: &with_texture,
-            targets: &index_only,
+            targets: fill_targets,
             ..level("fill", "fs_fill", true, fill_depth.clone())
         });
         // Across's sky, whose pictures have transparent pixels
