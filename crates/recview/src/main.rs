@@ -289,12 +289,16 @@ fn save_folder(folder: &GameFolder) {
     }
 }
 
-// The replay's file name, and how many ghosts it is drawn with
-fn title_name(replay: &Path, ghosts: usize) -> String {
+// The replay's file name, the level's name, and how many ghosts it is drawn with
+fn title_name(replay: &Path, level: &str, ghosts: usize) -> String {
     let mut name = replay
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
+    let level = level.trim();
+    if !level.is_empty() {
+        name += &format!(" \"{level}\"");
+    }
     if ghosts > 0 {
         name += &format!(" + {ghosts} ghost{}", if ghosts == 1 { "" } else { "s" });
     }
@@ -728,7 +732,7 @@ impl App {
         }
         self.stepped_to = None;
         self.current = Some(Current {
-            name: title_name(&loaded.path, opened.ghosts.len()),
+            name: title_name(&loaded.path, &loaded.level.name, opened.ghosts.len()),
             opened,
             level_file,
             level_id: loaded.rec.level_id,
@@ -1304,5 +1308,14 @@ mod tests {
         assert_eq!(next("01b0ne0.rec", 1), Some("01b0ne1.rec".into()));
         assert_eq!(next("01b0ne0.rec", -1), Some("01b0ne.rec".into()));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn title_names_the_level() {
+        let title = |level, ghosts| title_name(Path::new("lev/neolb6.lev"), level, ghosts);
+        assert_eq!(title("Top Heavy", 0), "neolb6.lev \"Top Heavy\"");
+        assert_eq!(title("w", 2), "neolb6.lev \"w\" + 2 ghosts");
+        // Internal levels have no name in the file
+        assert_eq!(title("", 1), "neolb6.lev + 1 ghost");
     }
 }
