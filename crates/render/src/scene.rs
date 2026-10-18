@@ -494,6 +494,15 @@ impl Scene {
                 }
             };
 
+        // The pictures drawn after the grass, at most
+        let pictures_after = if options.pictures {
+            let sprites = level.sprites.iter();
+            sprites
+                .filter(|s| matches!(s.clipping, Some(Clipping::Sky | Clipping::Unclipped)))
+                .count()
+        } else {
+            0
+        };
         let ground_start = instances.len() as u32;
         if options.pictures {
             sprite_instances(Clipping::Ground, &mut instances, &mut placements);
@@ -509,10 +518,12 @@ impl Scene {
                 texture_ref(qgrass),
                 origin,
                 (pixel_width, pixel_height),
+                pictures_after,
                 &mut instances,
             );
         }
         // The grass is placed at zoom 1
+        placements.reserve_exact(instances.len() + pictures_after - placements.len());
         placements.resize(instances.len(), None);
         let sky_start = instances.len() as u32;
         if options.pictures {
@@ -638,6 +649,8 @@ fn grass_instances(
     qgrass: TextureRef,
     origin: Vec2,
     (pixel_width, pixel_height): (i32, i32),
+    // Pictures added after the grass, which the instances get room for too
+    room_after: usize,
     out: &mut Vec<Instance>,
 ) {
     let pieces: Vec<Piece> = lgr
@@ -652,11 +665,23 @@ fn grass_instances(
     let qgrass_margin = QGRASS_MARGIN - QUPDOWN_MARGIN;
     let to_world = |x: i32, y: i32| [origin.x + x as f64 / M2P, origin.y + y as f64 / M2P];
 
-    for poly in level.polygons.iter().filter(|p| p.is_grass) {
-        let Some((x0, heights)) = grass::heightmap(poly, origin) else {
-            continue;
-        };
-        for placement in grass::place(&pieces, x0, &heights) {
+    // Placed first, so the instances are counted and their room taken at once: a grassy level
+    // has hundreds of thousands, which growing a few at a time copies over and over
+    let placed: Vec<Vec<grass::Placement>> = level
+        .polygons
+        .iter()
+        .filter(|p| p.is_grass)
+        .filter_map(|poly| grass::heightmap(poly, origin))
+        .map(|(x0, heights)| grass::place(&pieces, x0, &heights))
+        .collect();
+    let count: usize = placed
+        .iter()
+        .flatten()
+        .map(|p| if pieces[p.piece].mask.is_some() { 3 } else { 1 })
+        .sum();
+    out.reserve(count + room_after);
+    for placements in placed {
+        for placement in placements {
             let piece = &pieces[placement.piece];
             let (rect, mask_rect) = rects[placement.piece];
             let (w, h) = (piece.pic.width as i32, piece.pic.height as i32);
