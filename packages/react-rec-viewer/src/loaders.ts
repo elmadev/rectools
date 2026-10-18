@@ -1,4 +1,12 @@
-import { GhostInput, RecSummary, ReplayInput, ShirtInput, inspectLevel, inspectRec } from "./engine.js";
+import {
+  GhostInput,
+  RecSummary,
+  ReplayInput,
+  ShirtInput,
+  inspectLevel,
+  inspectRec,
+  levelLgrName,
+} from "./engine.js";
 import { HttpError, RecViewerError, asKind } from "./errors.js";
 
 // Recent downloads, so switching replays of one level doesn't fetch the level and LGR again
@@ -50,7 +58,9 @@ export interface Sources {
 async function loadLgr(sources: Sources, lev: Uint8Array): Promise<Uint8Array> {
   const get = (url: string) => fetchBytes(url, sources.init);
   try {
-    const url = sources.lgrFileUrl ?? sources.lgrUrl(await inspectLevel(lev));
+    // Read from the level as it is, without waiting for the engine to load
+    const name = levelLgrName(lev) ?? (await inspectLevel(lev));
+    const url = sources.lgrFileUrl ?? sources.lgrUrl(name);
     return await get(url);
   } catch (e) {
     try {

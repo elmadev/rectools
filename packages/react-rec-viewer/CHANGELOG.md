@@ -11,6 +11,8 @@
 - The ground and sky take less of the GPU to draw.
 - Levels with a lot of grass, or many pictures, take much less to draw: only what is in view
   is drawn.
+- A level's LGR starts downloading as soon as the level is in, rather than once the engine has
+  loaded.
 
 ## 0.2.1 - 2026-10-17
 

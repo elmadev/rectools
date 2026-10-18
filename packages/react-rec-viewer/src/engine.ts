@@ -82,6 +82,20 @@ export async function inspectLevel(lev: Uint8Array): Promise<string> {
   return levelLgr(lev);
 }
 
+// The LGR name a .lev file asks for, read where the file keeps it, so the LGR can be fetched
+// while the engine still loads. Undefined for a file this doesn't read, which inspectLevel
+// reads instead.
+export function levelLgrName(lev: Uint8Array): string | undefined {
+  // "POT14": the magic, a checksum, the level's id, four integrity values, then its name in
+  // 51 bytes and the LGR's in 16. "POT06" levels all use the default LGR.
+  const magic = String.fromCharCode(...lev.subarray(0, 5));
+  if (magic === "POT06") return "default";
+  if (magic !== "POT14" || lev.length < 110) return undefined;
+  const field = lev.subarray(94, 110);
+  const end = field.indexOf(0);
+  return String.fromCharCode(...field.subarray(0, end < 0 ? field.length : end));
+}
+
 // Whether an Across replay of a level from a file was recorded on this .lev
 export async function isAcrossRecOf(rec: Uint8Array, lev: Uint8Array): Promise<boolean> {
   await loadEngine();
