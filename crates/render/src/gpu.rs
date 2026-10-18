@@ -201,6 +201,13 @@ fn depth_attachment(view: &wgpu::TextureView) -> wgpu::RenderPassDepthStencilAtt
     }
 }
 
+// A quad for each instance. WebGPU warns about a draw of no instances, so those are left out.
+fn draw_quads(pass: &mut wgpu::RenderPass, instances: std::ops::Range<u32>) {
+    if !instances.is_empty() {
+        pass.draw(0..6, instances);
+    }
+}
+
 fn color(
     view: &wgpu::TextureView,
     load: wgpu::LoadOp<wgpu::Color>,
@@ -927,23 +934,23 @@ impl Renderer {
                 pass.set_vertex_buffer(1, self.dynamic_rects.slice(..));
                 pass.set_pipeline(&self.fill);
                 pass.set_stencil_reference(0);
-                pass.draw(0..6, draw.ground_fill.clone());
+                draw_quads(&mut pass, draw.ground_fill.clone());
                 pass.set_stencil_reference(1);
                 if matches!(s.look, Look::Across(_)) {
                     pass.set_pipeline(&self.fill_masked);
                 }
-                pass.draw(0..6, draw.sky_fill.clone());
+                draw_quads(&mut pass, draw.sky_fill.clone());
                 if let (Some(instances), Some(p)) = (&scene.instances, s.pictures()) {
                     pass.set_vertex_buffer(0, instances.slice(..));
                     let rects = (i * p.instances.len() * std::mem::size_of::<CanvasRect>()) as u64;
                     pass.set_vertex_buffer(1, self.level_rects.slice(rects..));
                     pass.set_pipeline(&self.sprite_clipped);
                     pass.set_stencil_reference(0);
-                    pass.draw(0..6, p.ground.clone());
+                    draw_quads(&mut pass, p.ground.clone());
                     pass.set_stencil_reference(1);
-                    pass.draw(0..6, p.sky.clone());
+                    draw_quads(&mut pass, p.sky.clone());
                     pass.set_pipeline(&self.sprite_unclipped);
-                    pass.draw(0..6, p.unclipped.clone());
+                    draw_quads(&mut pass, p.unclipped.clone());
                 }
             }
         }
@@ -970,11 +977,11 @@ impl Renderer {
                 set_view(&mut pass, i, params.viewport);
                 // Objects, then ghosts, then the replay's own bikes
                 pass.set_pipeline(&self.dynamic);
-                pass.draw(0..6, draw.dynamic.start..draw.ghosts.start);
+                draw_quads(&mut pass, draw.dynamic.start..draw.ghosts.start);
                 pass.set_pipeline(ghost);
-                pass.draw(0..6, draw.ghosts.clone());
+                draw_quads(&mut pass, draw.ghosts.clone());
                 pass.set_pipeline(&self.dynamic);
-                pass.draw(0..6, draw.ghosts.end..draw.dynamic.end);
+                draw_quads(&mut pass, draw.ghosts.end..draw.dynamic.end);
             }
         }
 
@@ -1015,7 +1022,7 @@ impl Renderer {
                 pass.set_stencil_reference(1);
                 pass.draw(0..6, m.fills + 2..m.fills + 3);
                 pass.set_pipeline(&self.sprite_unclipped);
-                pass.draw(0..6, m.icons.clone());
+                draw_quads(&mut pass, m.icons.clone());
             }
         }
 
@@ -1043,7 +1050,7 @@ impl Renderer {
                 for (params, draw) in views.iter().zip(draws) {
                     let [x, y, w, h] = params.viewport;
                     pass.set_scissor_rect(x, y, w, h);
-                    pass.draw(0..6, draw.timer.clone());
+                    draw_quads(&mut pass, draw.timer.clone());
                 }
             }
         }

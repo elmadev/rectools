@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- No more "Draw with an instance count of 0" warnings in the console.
+
 ## 0.2.1 - 2026-10-17
 
 - Fixed a black screen in Firefox on Linux, which 0.2.0 brought: its WebGL2 has too few
