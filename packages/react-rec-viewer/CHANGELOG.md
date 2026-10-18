@@ -3,6 +3,7 @@
 ## Unreleased
 
 - No more "Draw with an instance count of 0" warnings in the console.
+- Playing takes a little less work each frame: the time shown is changed in place.
 
 ## 0.2.1 - 2026-10-17
 

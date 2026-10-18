@@ -658,9 +658,11 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
       if (t !== reported) {
         reported = t;
         const text = formatTime(t);
-        if (timeRef.current && text !== shownTime) {
+        // React's text node is changed rather than replaced, which costs less every frame
+        const shown = timeRef.current?.firstChild;
+        if (shown instanceof Text && text !== shownTime) {
           shownTime = text;
-          timeRef.current.textContent = text;
+          shown.data = text;
         }
         if (scrubRef.current && !scrubbing.current) scrubRef.current.value = String(t);
         callbacks.current.props.onTimeChange?.(t);
