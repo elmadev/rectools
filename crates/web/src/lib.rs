@@ -223,6 +223,40 @@ impl Replay {
     }
 }
 
+// Another replay of the level, for `Viewer::add_ghost`
+#[wasm_bindgen]
+pub struct Ghost {
+    rec: Vec<u8>,
+    shirt: Option<Shirt>,
+}
+
+#[wasm_bindgen]
+impl Ghost {
+    #[wasm_bindgen(constructor)]
+    pub fn new(rec: &[u8]) -> Ghost {
+        Ghost {
+            rec: rec.to_vec(),
+            shirt: None,
+        }
+    }
+
+    // Its shirt bitmap (bmp/<nick>.bmp)
+    #[wasm_bindgen(js_name = setShirt)]
+    pub fn set_shirt(&mut self, bmp: &[u8]) {
+        self.shirt = Some(Shirt::Bmp(bmp.to_vec()));
+    }
+
+    // Its shirt from the RGBA pixels of a picture, as `Replay::set_shirt_pixels`
+    #[wasm_bindgen(js_name = setShirtPixels)]
+    pub fn set_shirt_pixels(&mut self, width: usize, height: usize, rgba: &[u8]) {
+        self.shirt = Some(Shirt::Rgba {
+            width,
+            height,
+            pixels: rgba.to_vec(),
+        });
+    }
+}
+
 // What is shown, besides the session the player keeps
 struct Loaded {
     scene: GpuScene,
@@ -231,6 +265,8 @@ struct Loaded {
     data: game_data::Loaded,
     // The main replay's file, to tell a merge into it from another replay
     rec: Vec<u8>,
+    // How many replays are merged into it
+    ghosts: usize,
 }
 
 // What a key or a button of the page does, see player::Action
@@ -576,7 +612,7 @@ impl Viewer {
 
     fn show(&mut self, replay: &Replay, data: game_data::Loaded) -> Result<(), JsValue> {
         let built_with = self.player.scene_options();
-        let scene = self.build_scene(&data, &built_with)?;
+        let scene = build_scene(&self.renderer, &data, &built_with)?;
         // Merging replays into the one playing, or leaving them out, carries on from the same
         // moment with the same view
         let merge = self.loaded.as_ref().is_some_and(|l| l.rec == replay.rec);
@@ -586,25 +622,47 @@ impl Viewer {
             built_with,
             data,
             rec: replay.rec.clone(),
+            ghosts: replay.ghosts.len(),
         });
         Ok(())
     }
 
-    fn build_scene(
-        &self,
-        data: &game_data::Loaded,
-        options: &SceneOptions,
-    ) -> Result<GpuScene, JsValue> {
-        let scene = Scene::new(
-            &data.look,
-            &data.level,
-            &data.shirts(),
-            options,
-            self.renderer.atlas_limit(),
-        );
-        Ok(self
-            .renderer
-            .upload_scene(scene.map_err(|e| failure("graphics", e))?))
+    // Merges another replay of the level into the replay shown, as loading them together
+    // does, from the same moment with the same view. Only the new replay is read, not the
+    // level and LGR again. Across replays are merged by loading them together.
+    #[wasm_bindgen(js_name = addGhost)]
+    pub fn add_ghost(&mut self, ghost: &Ghost) -> Result<(), JsValue> {
+        let Some(loaded) = &mut self.loaded else {
+            return Err(failure("ghost", "there is no replay to merge into"));
+        };
+        let game_data::Graphics::Elma(lgr) = &loaded.data.look else {
+            return Err(failure(
+                "ghost",
+                "Across replays are merged by loading them",
+            ));
+        };
+        if loaded.data.level_only {
+            return Err(failure("ghost", "there is no replay to merge into"));
+        }
+        let name = format!("replay {}", loaded.ghosts + 2);
+        let rec = Rec::parse(&ghost.rec).map_err(|e| failure("ghost", format!("{name}: {e}")))?;
+        let shirt = ghost.shirt.as_ref().and_then(|s| s.decode(&lgr.palette));
+        // The scene has the shirts in it, and nothing else of the bikes
+        let new_shirt = shirt.is_some();
+        let riders = loaded.data.riders.len();
+        loaded.data.merge(name, &rec, shirt).map_err(load_failure)?;
+        if new_shirt {
+            match build_scene(&self.renderer, &loaded.data, &loaded.built_with) {
+                Ok(scene) => loaded.scene = scene,
+                Err(e) => {
+                    loaded.data.riders.truncate(riders);
+                    return Err(e);
+                }
+            }
+        }
+        loaded.ghosts += 1;
+        self.player.load(Content::new(&loaded.data), true);
+        Ok(())
     }
 
     // Drawn with Across's graphics, which have no LGR, grass, pictures or gravity apples
@@ -878,7 +936,7 @@ impl Viewer {
         if let Some(loaded) = &self.loaded
             && loaded.built_with != options
         {
-            match self.build_scene(&loaded.data, &options) {
+            match build_scene(&self.renderer, &loaded.data, &options) {
                 Ok(scene) => {
                     if let Some(loaded) = &mut self.loaded {
                         loaded.scene = scene;
@@ -932,4 +990,19 @@ impl Viewer {
         }
         self.renderer.queue().present(frame);
     }
+}
+
+fn build_scene(
+    renderer: &Renderer,
+    data: &game_data::Loaded,
+    options: &SceneOptions,
+) -> Result<GpuScene, JsValue> {
+    let scene = Scene::new(
+        &data.look,
+        &data.level,
+        &data.shirts(),
+        options,
+        renderer.atlas_limit(),
+    );
+    Ok(renderer.upload_scene(scene.map_err(|e| failure("graphics", e))?))
 }

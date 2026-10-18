@@ -1,5 +1,6 @@
 import init, {
   Action,
+  Ghost,
   Replay,
   Viewer,
   keyHelp,
@@ -113,6 +114,18 @@ export function buildReplay(input: ReplayInput): Replay {
     setPixels(i + 1, ghost.shirt);
   });
   return replay;
+}
+
+// A replay to merge into the one a viewer shows, see Viewer.addGhost
+export function buildGhost(input: GhostInput): Ghost {
+  const ghost = new Ghost(input.rec);
+  const shirt = input.shirt;
+  if (shirt instanceof Uint8Array) ghost.setShirt(shirt);
+  else if (shirt) {
+    const pixels = shirt.pixels instanceof Uint8Array ? shirt.pixels : new Uint8Array(shirt.pixels.buffer);
+    ghost.setShirtPixels(shirt.width, shirt.height, pixels);
+  }
+  return ghost;
 }
 
 export { Action, Viewer, keyHelp };

@@ -79,6 +79,18 @@ export async function decodeShirt(data: Uint8Array): Promise<ShirtInput> {
   return { width, height, pixels: context.getImageData(0, 0, width, height).data };
 }
 
+// Each download decoded once, so loading its replays again gives the viewer the same shirt,
+// and replays merged into them don't load the others again
+const decoded = new WeakMap<Uint8Array, Promise<ShirtInput>>();
+function decodeOnce(data: Uint8Array): Promise<ShirtInput> {
+  let shirt = decoded.get(data);
+  if (!shirt) {
+    shirt = decodeShirt(data);
+    decoded.set(data, shirt);
+  }
+  return shirt;
+}
+
 export interface LoadedSources {
   input: ReplayInput;
   // How many bikes each replay has, 2 for a two player one
@@ -93,7 +105,7 @@ export async function loadSources(sources: Sources): Promise<LoadedSources> {
     const url = sources.shirtUrls[i];
     return url
       ? get(url)
-          .then(decodeShirt)
+          .then(decodeOnce)
           .catch(() => undefined)
       : Promise.resolve(undefined);
   };

@@ -497,16 +497,7 @@ pub fn assemble(
         .map(|r| (Arc::new(r.clone()), None))
         .collect();
     riders[0].1 = shirt;
-    for (name, ghost, shirt) in ghosts {
-        if ghost.level_id != rec.level_id {
-            return Err(Error::NotSameLevel {
-                ghost: name,
-                level: rec.level_filename,
-            });
-        }
-        add_rides(&mut riders, &ghost, shirt);
-    }
-    Ok(Loaded {
+    let mut loaded = Loaded {
         level_only: false,
         best_time: level.best_time(rec.multiplayer),
         path,
@@ -516,7 +507,11 @@ pub fn assemble(
         riders,
         warnings: Vec::new(),
         settings: Settings::default(),
-    })
+    };
+    for (name, ghost, shirt) in ghosts {
+        loaded.merge(name, &ghost, shirt)?;
+    }
+    Ok(loaded)
 }
 
 // Every ride of a merged replay, so both bikes of a multiplayer one are drawn. The shirt is
@@ -565,6 +560,18 @@ impl Loaded {
 
     pub fn add_ghost(&mut self, rec: &Rec) {
         add_rides(&mut self.riders, rec, None);
+    }
+
+    // `ghost`, another replay of the level, merged in after the others, in `shirt`
+    pub fn merge(&mut self, name: String, ghost: &Rec, shirt: Option<Pic8>) -> Result<(), Error> {
+        if ghost.level_id != self.rec.level_id {
+            return Err(Error::NotSameLevel {
+                ghost: name,
+                level: self.rec.level_filename.clone(),
+            });
+        }
+        add_rides(&mut self.riders, ghost, shirt);
+        Ok(())
     }
 
     // When each rider reaches the exit with every apple, in game time, in the order of `riders`

@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import { Controls } from "./Controls.js";
-import { Action, GhostInput, ReplayInput, Viewer, buildReplay, loadEngine } from "./engine.js";
+import { Action, GhostInput, ReplayInput, Viewer, buildGhost, buildReplay, loadEngine } from "./engine.js";
 import { RecViewerError, toRecError } from "./errors.js";
 import { formatTime } from "./format.js";
 import { attachGestures } from "./gestures.js";
@@ -299,6 +299,17 @@ const sameGhosts = (a: GhostInput[] | undefined, b: GhostInput[] | undefined) =>
   ((a?.length ?? 0) === (b?.length ?? 0) &&
     (a ?? []).every((g, i) => g.rec === b?.[i].rec && g.shirt === b?.[i].shirt));
 
+// The ghosts `next` has after those of `shown`, when that's all that changed, so they can be
+// merged into the replay shown. None when nothing changed, undefined when anything else did.
+const addedGhosts = (shown: ReplayInput, next: ReplayInput): GhostInput[] | undefined => {
+  const files = ["rec", "lgr", "lev", "res", "acrossPack", "shirt"] as const;
+  if (!next.rec || files.some((k) => shown[k] !== next[k])) return undefined;
+  const before = shown.ghosts ?? [];
+  const after = next.ghosts ?? [];
+  if (after.length < before.length || !sameGhosts(before, after.slice(0, before.length))) return undefined;
+  return after.slice(before.length);
+};
+
 const sameState = (a: State, b: State) =>
   (Object.keys(a) as (keyof State)[]).every((k) => k === "levelOptions" || a[k] === b[k]) &&
   sameOptions(a.levelOptions, b.levelOptions);
@@ -557,18 +568,38 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
 
   // Load the replay, or the level on its own
   const wasLevelOnly = useRef(false);
+  // What the viewer was given, for merging only the replays added to it
+  const shownInput = useRef<ReplayInput | null>(null);
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewerReady || !viewer) return;
-    setLoaded(false);
+    const input = { rec, lgr, lev, res, acrossPack, shirt, ghosts };
+    const shown = viewer.hasContent() && !viewer.isAcross() ? shownInput.current : null;
+    const added = shown ? addedGhosts(shown, input) : undefined;
     setError(null);
+    if (!added) setLoaded(false);
     try {
-      syncSize();
-      const replay = buildReplay({ rec, lgr, lev, res, acrossPack, shirt, ghosts });
-      try {
-        viewer.load(replay);
-      } finally {
-        replay.free();
+      if (added) {
+        // Merged in one at a time, so those before a broken one stay
+        const all = input.ghosts ?? [];
+        for (let i = all.length - added.length; i < all.length; i++) {
+          const ghost = buildGhost(all[i]);
+          try {
+            viewer.addGhost(ghost);
+          } finally {
+            ghost.free();
+          }
+          shownInput.current = { ...input, ghosts: all.slice(0, i + 1) };
+        }
+      } else {
+        syncSize();
+        const replay = buildReplay(input);
+        try {
+          viewer.load(replay);
+        } finally {
+          replay.free();
+        }
+        shownInput.current = input;
       }
       const only = viewer.levelOnly();
       // A replay after a level shown whole goes back to the zoom it was given
@@ -586,6 +617,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
       // A failed merge goes on with the replay that was playing
       const shown = viewer.hasContent();
       if (shown) setLoaded(true);
+      else shownInput.current = null;
       sync();
       reportError(e, shown);
     }
