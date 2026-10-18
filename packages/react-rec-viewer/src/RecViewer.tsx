@@ -9,7 +9,17 @@ import {
   useState,
 } from "react";
 import { Controls } from "./Controls.js";
-import { Action, GhostInput, ReplayInput, Viewer, buildGhost, buildReplay, loadEngine } from "./engine.js";
+import {
+  ActionName,
+  GhostInput,
+  ReplayInput,
+  Viewer,
+  action,
+  buildGhost,
+  buildReplay,
+  createViewer,
+  loadEngine,
+} from "./engine.js";
 import { RecViewerError, toRecError } from "./errors.js";
 import { formatTime } from "./format.js";
 import { attachGestures } from "./gestures.js";
@@ -460,10 +470,10 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     },
     [sync],
   );
-  const act = useCallback((action: Action) => change((v) => v.act(action)), [change]);
-  const togglePlay = useCallback(() => act(Action.TogglePlay), [act]);
-  const fitLevel = useCallback(() => act(Action.FitLevel), [act]);
-  const recenter = useCallback(() => act(Action.Recenter), [act]);
+  const act = useCallback((name: ActionName) => change((v) => v.act(action(name))), [change]);
+  const togglePlay = useCallback(() => act("TogglePlay"), [act]);
+  const fitLevel = useCallback(() => act("FitLevel"), [act]);
+  const recenter = useCallback(() => act("Recenter"), [act]);
   const seek = useCallback((seconds: number) => change((v) => v.seek(seconds)), [change]);
   const setPlaying = useCallback((value: boolean) => change((v) => v.setPlaying(value)), [change]);
 
@@ -506,7 +516,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     const canvas = canvasRef.current;
     if (!canvas) return;
     loadEngine()
-      .then(() => Viewer.create(canvas))
+      .then(() => createViewer(canvas))
       .then((viewer) => {
         if (cancelled) {
           viewer.free();
@@ -922,11 +932,11 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
             settingsOpen={settingsOpen}
             onTogglePlay={togglePlay}
             onSeek={seek}
-            onSlower={() => act(Action.Slower)}
-            onFaster={() => act(Action.Faster)}
-            onReverse={() => act(Action.Reverse)}
-            onZoomOut={() => act(Action.ZoomOut)}
-            onZoomIn={() => act(Action.ZoomIn)}
+            onSlower={() => act("Slower")}
+            onFaster={() => act("Faster")}
+            onReverse={() => act("Reverse")}
+            onZoomOut={() => act("ZoomOut")}
+            onZoomIn={() => act("ZoomIn")}
             onFitLevel={fitLevel}
             // Choosing whom to follow puts the camera on them
             onFollow={(bike) =>

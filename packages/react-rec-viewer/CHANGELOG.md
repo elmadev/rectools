@@ -15,6 +15,8 @@
   loaded.
 - `RecPlayer` loads the engine and readies the GPU while it downloads the replay and level,
   rather than after.
+- Browsers with WebGPU download a fifth of the engine: 0.55 MB rather than 2.9 MB (216 KB
+  gzipped, from 1.13 MB). The package has a second build, with WebGL2, for the others.
 
 ## 0.2.1 - 2026-10-17
 

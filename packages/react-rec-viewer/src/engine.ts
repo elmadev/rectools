@@ -1,20 +1,55 @@
-import init, {
-  Action,
-  Ghost,
-  Replay,
-  Viewer,
-  keyHelp,
-  acrossRecOnLevel,
-  levelLgr,
-  recInfo,
-} from "../wasm/rectools_web.js";
+import type * as Wasm from "../wasm/rectools_web.js";
 
-let ready: Promise<unknown> | undefined;
+export type { Viewer } from "../wasm/rectools_web.js";
+// One of the player's actions, see Viewer.act
+export type ActionName = keyof typeof Wasm.Action;
+
+// What both builds export, the same from either
+type Engine = Omit<typeof Wasm, "default" | "initSync">;
+
+let ready: Promise<Engine> | undefined;
+let loaded: Engine | undefined;
+
+// The WebGPU build where the browser has a WebGPU adapter, else the WebGL2 one. They are built
+// from the same code, and the WebGPU one is a fifth of the size.
+async function load(): Promise<Engine> {
+  const gpu = (navigator as { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
+  if (gpu) {
+    // Downloaded while the browser is asked for an adapter, which it nearly always has
+    const webgpu = import("../wasm/rectools_web.js").then(async (m) => {
+      await m.default();
+      return m;
+    });
+    webgpu.catch(() => {});
+    if (await gpu.requestAdapter().catch(() => null)) return webgpu;
+  }
+  const gl = await import("../wasm/rectools_web_gl.js");
+  await gl.default();
+  return gl;
+}
 
 // Loads the wasm module once
 export function loadEngine(): Promise<unknown> {
-  ready ??= init();
+  ready ??= load().then((engine) => (loaded = engine));
   return ready;
+}
+
+// The wasm module, once loadEngine has loaded it
+function engine(): Engine {
+  if (!loaded) throw new Error("the engine isn't loaded yet, see loadEngine");
+  return loaded;
+}
+
+export function createViewer(canvas: HTMLCanvasElement): Promise<Wasm.Viewer> {
+  return engine().Viewer.create(canvas);
+}
+
+export function action(name: ActionName): Wasm.Action {
+  return engine().Action[name];
+}
+
+export function keyHelp(): Wasm.KeyHelp[] {
+  return engine().keyHelp();
 }
 
 // The colors of a decoded picture, like a site's png of a shirt: upright, or on its side
@@ -64,7 +99,7 @@ export interface RecSummary {
 // What a replay needs: its level file name, and whether it's in elma.res
 export async function inspectRec(rec: Uint8Array): Promise<RecSummary> {
   await loadEngine();
-  const info = recInfo(rec);
+  const info = engine().recInfo(rec);
   const summary = {
     levelFilename: info.levelFilename,
     levelId: info.levelId,
@@ -79,7 +114,7 @@ export async function inspectRec(rec: Uint8Array): Promise<RecSummary> {
 // The LGR name a level uses, without the extension
 export async function inspectLevel(lev: Uint8Array): Promise<string> {
   await loadEngine();
-  return levelLgr(lev);
+  return engine().levelLgr(lev);
 }
 
 // The LGR name a .lev file asks for, read where the file keeps it, so the LGR can be fetched
@@ -99,12 +134,13 @@ export function levelLgrName(lev: Uint8Array): string | undefined {
 // Whether an Across replay of a level from a file was recorded on this .lev
 export async function isAcrossRecOf(rec: Uint8Array, lev: Uint8Array): Promise<boolean> {
   await loadEngine();
-  return acrossRecOnLevel(rec, lev);
+  return engine().acrossRecOnLevel(rec, lev);
 }
 
-export function buildReplay(input: ReplayInput): Replay {
+export function buildReplay(input: ReplayInput): Wasm.Replay {
+  const { Replay } = engine();
   const lgr = input.lgr ?? new Uint8Array();
-  let replay: Replay;
+  let replay: Wasm.Replay;
   if (!input.rec) {
     if (!input.lev) throw new Error("a level is needed when there is no replay");
     replay = Replay.level(input.lev, lgr);
@@ -131,7 +167,8 @@ export function buildReplay(input: ReplayInput): Replay {
 }
 
 // A replay to merge into the one a viewer shows, see Viewer.addGhost
-export function buildGhost(input: GhostInput): Ghost {
+export function buildGhost(input: GhostInput): Wasm.Ghost {
+  const { Ghost } = engine();
   const ghost = new Ghost(input.rec);
   const shirt = input.shirt;
   if (shirt instanceof Uint8Array) ghost.setShirt(shirt);
@@ -141,5 +178,3 @@ export function buildGhost(input: GhostInput): Ghost {
   }
   return ghost;
 }
-
-export { Action, Viewer, keyHelp };

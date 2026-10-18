@@ -430,12 +430,20 @@ pub struct Viewer {
 
 #[wasm_bindgen]
 impl Viewer {
-    // Opens WebGPU, or WebGL2 where WebGPU isn't available
+    // Opens WebGPU, or WebGL2 where WebGPU isn't available, of those it is built with
     pub async fn create(canvas: HtmlCanvasElement) -> Result<Viewer, JsValue> {
         console_error_panic_hook::set_once();
         let (width, height) = (canvas.width().max(1), canvas.height().max(1));
         let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
-        descriptor.backends = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
+        descriptor.backends = wgpu::Backends::empty();
+        #[cfg(feature = "webgpu")]
+        {
+            descriptor.backends |= wgpu::Backends::BROWSER_WEBGPU;
+        }
+        #[cfg(feature = "webgl")]
+        {
+            descriptor.backends |= wgpu::Backends::GL;
+        }
         let instance = wgpu::util::new_instance_with_webgpu_detection(descriptor).await;
         let surface = instance
             .create_surface(wgpu::SurfaceTarget::Canvas(canvas))

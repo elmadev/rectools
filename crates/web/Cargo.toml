@@ -7,13 +7,20 @@ license-file.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# What it can draw with. The npm package builds it once with each, as a WebGPU build leaves out
+# the shader compiler and most of wgpu, which WebGL2 needs.
+default = ["webgpu", "webgl"]
+webgpu = ["wgpu/webgpu"]
+webgl = ["wgpu/webgl"]
+
 [dependencies]
 elma-formats.workspace = true
 game-data.workspace = true
 replay.workspace = true
 player.workspace = true
 render.workspace = true
-wgpu = { workspace = true, features = ["wgsl", "webgl", "webgpu"] }
+wgpu = { workspace = true, features = ["wgsl"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
