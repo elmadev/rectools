@@ -13,6 +13,8 @@
   is drawn.
 - A level's LGR starts downloading as soon as the level is in, rather than once the engine has
   loaded.
+- `RecPlayer` loads the engine and readies the GPU while it downloads the replay and level,
+  rather than after.
 
 ## 0.2.1 - 2026-10-17
 

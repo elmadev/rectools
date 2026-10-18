@@ -187,7 +187,9 @@ export const RecPlayer = forwardRef<RecViewerHandle, RecPlayerProps>(function Re
       className={className}
       style={{ position: "relative", display: "flex", flexDirection: "column", background: "#000", ...style }}
     >
-      {input ? (
+      {/* Shown while the files download too, so the viewer readies the GPU meanwhile; not after
+          a failure, which would leave the replay before it on screen */}
+      {input || (loading && !error) ? (
         <RecViewer
           ref={ref}
           bikeLabels={bikeLabels(recUrls ?? [], recNames, bikesPerRec)}

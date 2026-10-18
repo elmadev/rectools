@@ -573,6 +573,9 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewerReady || !viewer) return;
+    // Nothing given yet: RecPlayer shows the viewer while it downloads, so the GPU is ready
+    // when the files are in
+    if (!rec && !lev && !lgr && !res && !acrossPack) return;
     const input = { rec, lgr, lev, res, acrossPack, shirt, ghosts };
     const shown = viewer.hasContent() && !viewer.isAcross() ? shownInput.current : null;
     const added = shown ? addedGhosts(shown, input) : undefined;
