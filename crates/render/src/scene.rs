@@ -95,6 +95,14 @@ pub struct Scene {
     pub look: Look,
     // Where there is room left in the atlas
     pub(crate) packer: Packer,
+    // Different for each scene made, so what a frame worked out for one isn't taken for
+    // another's
+    pub(crate) id: u64,
+}
+
+pub(crate) fn next_scene_id() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 // What the bikes, objects and sky are drawn with
@@ -115,6 +123,42 @@ pub struct ElmaLook {
     pub canvas_right: f64,
 }
 
+// Instances of one of the pictures' groups, as many as CHUNK in a row, and the box in the level
+// they are all in, y up: a view draws the chunks that reach into it and leaves out the rest
+#[derive(Debug, Clone, PartialEq)]
+pub struct Chunk {
+    pub range: Range<u32>,
+    pub min: Vec2,
+    pub max: Vec2,
+}
+
+const CHUNK: u32 = 64;
+
+// `range` of `instances` in chunks
+fn chunks(instances: &[Instance], range: Range<u32>) -> Vec<Chunk> {
+    let mut out = Vec::new();
+    let mut start = range.start;
+    while start < range.end {
+        let end = (start + CHUNK).min(range.end);
+        let corners = instances[start as usize..end as usize]
+            .iter()
+            .flat_map(|i| {
+                let o = Vec2::new(i.origin[0] as f64, i.origin[1] as f64);
+                let u = Vec2::new(i.axis_u[0] as f64, i.axis_u[1] as f64);
+                let v = Vec2::new(i.axis_v[0] as f64, i.axis_v[1] as f64);
+                [o, o + u, o + v, o + u + v]
+            });
+        let (min, max) = bounds(corners).unwrap_or_default();
+        out.push(Chunk {
+            range: start..end,
+            min,
+            max,
+        });
+        start = end;
+    }
+    out
+}
+
 // The pictures and grass drawn with the level: those the ground clips, those the sky clips,
 // and those nothing clips, as ranges of `instances`
 #[derive(Default)]
@@ -127,6 +171,8 @@ pub struct Pictures {
     pub unclipped: Range<u32>,
     // Qgrass can move in front of the bikes: there is qgrass and a picture in front
     pub front_grass: bool,
+    // The ground, sky and unclipped groups in chunks
+    pub chunks: [Vec<Chunk>; 3],
 }
 
 impl ElmaLook {
@@ -495,6 +541,7 @@ impl Scene {
         let atlas_size = atlas.layer_size();
         let (atlas_layers, packer) = atlas.finish();
         Ok(Scene {
+            id: next_scene_id(),
             atlas_size,
             atlas_layers,
             palette: lgr.palette,
@@ -508,6 +555,11 @@ impl Scene {
                 sprites,
                 background: texture_ref(bg),
                 pictures: Pictures {
+                    chunks: [
+                        chunks(&instances, ground_start..sky_start),
+                        chunks(&instances, sky_start..unclipped_start),
+                        chunks(&instances, unclipped_start..end),
+                    ],
                     instances,
                     placements,
                     ground: ground_start..sky_start,

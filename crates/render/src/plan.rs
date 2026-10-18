@@ -7,7 +7,7 @@ use crate::fill_map::Tiling;
 use crate::hud::{PixelRect, last_apple_rects, timer_rects};
 use crate::instance::{CanvasRect, Instance, mode, snap_to_pixel_center};
 use crate::options::{CameraMode, GhostStyle, RenderOptions, TextureZoom};
-use crate::scene::{Look, Scene, TextureRef, dynamic_instances};
+use crate::scene::{Chunk, Look, Pictures, Scene, TextureRef, dynamic_instances};
 use crate::world::{View, World};
 use bytemuck::{Pod, Zeroable};
 use replay::Vec2;
@@ -83,6 +83,9 @@ pub(crate) struct ViewDraw {
     pub(crate) ghosts: Range<u32>,
     pub(crate) timer: Range<u32>,
     pub(crate) minimap: Option<MinimapDraw>,
+    // The runs of the pictures' ground, sky and unclipped groups the view draws, as ranges of
+    // FramePlan::picture_runs
+    pub(crate) pictures: [Range<usize>; 3],
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -118,7 +121,9 @@ pub struct FramePlan {
     // They changed since the frame before, and go to the GPU again
     pub(crate) level_rects_changed: bool,
     placed: Vec<(usize, CanvasRect)>,
-    previous_level_rects: Vec<CanvasRect>,
+    // What level_rects are for: the scene, and each view's zoom
+    level_rects_for: Vec<(u64, u64)>,
+    pub(crate) picture_runs: Vec<Range<u32>>,
     pub(crate) timer: Vec<HudRect>,
     pub(crate) views: Vec<ViewDraw>,
     // The instance of the frame behind the views, None when they cover the target
@@ -261,6 +266,8 @@ pub fn plan(
         .max()
         .unwrap_or(0);
     frame.fill_maps.clear();
+    frame.picture_runs.clear();
+    let picture_runs = &mut frame.picture_runs;
     frame.fill_map_width = map_width;
     let frame_maps = &mut frame.fill_maps;
     frame.uniforms.clear();
@@ -413,7 +420,12 @@ pub fn plan(
         } else {
             None
         };
+        let pictures = scene
+            .pictures()
+            .map(|p| visible_runs(p, &u, params.viewport, picture_runs))
+            .unwrap_or_default();
         draws.push(ViewDraw {
+            pictures,
             minimap,
             ground_fill: ground_start..sky_start,
             sky_fill: sky_start..dynamic_start,
@@ -452,17 +464,61 @@ pub fn plan(
     for &(i, rect) in &frame.placed {
         frame.rects[i] = rect;
     }
-    // Worked out again each frame, which takes little, and sent again when they change: with
-    // the zoom, or the scene
-    std::mem::swap(&mut frame.level_rects, &mut frame.previous_level_rects);
-    frame.level_rects.clear();
-    if let Look::Elma(elma) = &scene.look {
-        for params in views {
-            elma.picture_rects(params.zoom, &mut frame.level_rects);
+    // Worked out again and sent to the GPU when the zoom or the scene changes
+    let level_rects_for: Vec<(u64, u64)> =
+        views.iter().map(|v| (scene.id, v.zoom.to_bits())).collect();
+    frame.level_rects_changed = level_rects_for != frame.level_rects_for;
+    if frame.level_rects_changed {
+        frame.level_rects.clear();
+        if let Look::Elma(elma) = &scene.look {
+            for params in views {
+                elma.picture_rects(params.zoom, &mut frame.level_rects);
+            }
         }
+        frame.level_rects_for = level_rects_for;
     }
-    frame.level_rects_changed = frame.level_rects != frame.previous_level_rects;
     Ok(())
+}
+
+// Adds the runs of chunks of each of the pictures' groups that reach into the view to `runs`,
+// and returns where each group's are. A picture all outside the view would change none of its
+// pixels, and those drawn keep their order, which decides between pictures at one distance.
+fn visible_runs(
+    pictures: &Pictures,
+    u: &ViewUniform,
+    [_, _, vw, vh]: [u32; 4],
+    runs: &mut Vec<Range<u32>>,
+) -> [Range<usize>; 3] {
+    let ppm = u.pixels_per_meter as f64;
+    // A few pixels to spare: placed pictures can be a pixel or so off their quads
+    let margin = 4.0 / ppm;
+    let min = Vec2::new(
+        u.level_corner[0] as f64 - margin,
+        u.level_corner[1] as f64 - margin,
+    );
+    let max = Vec2::new(
+        u.level_corner[0] as f64 + vw as f64 / ppm + margin,
+        u.level_corner[1] as f64 + vh as f64 / ppm + margin,
+    );
+    let mut group = |chunks: &[Chunk]| {
+        let start = runs.len();
+        for c in chunks {
+            if c.max.x < min.x || c.min.x > max.x || c.max.y < min.y || c.min.y > max.y {
+                continue;
+            }
+            let joins = runs.len() > start && runs.last().is_some_and(|r| r.end == c.range.start);
+            match runs.last_mut() {
+                Some(run) if joins => run.end = c.range.end,
+                _ => runs.push(c.range.clone()),
+            }
+        }
+        start..runs.len()
+    };
+    [
+        group(&pictures.chunks[0]),
+        group(&pictures.chunks[1]),
+        group(&pictures.chunks[2]),
+    ]
 }
 
 #[cfg(test)]

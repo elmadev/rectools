@@ -1110,13 +1110,22 @@ impl Renderer {
                     pass.set_vertex_buffer(0, instances.slice(..));
                     let rects = (i * p.instances.len() * std::mem::size_of::<CanvasRect>()) as u64;
                     pass.set_vertex_buffer(1, self.level_rects.slice(rects..));
+                    // Only the pictures that reach into the view
+                    let runs =
+                        |group: usize| &self.frame.picture_runs[draw.pictures[group].clone()];
                     pass.set_pipeline(&self.sprite_clipped);
                     pass.set_stencil_reference(0);
-                    draw_quads(&mut pass, p.ground.clone());
+                    for run in runs(0) {
+                        draw_quads(&mut pass, run.clone());
+                    }
                     pass.set_stencil_reference(1);
-                    draw_quads(&mut pass, p.sky.clone());
+                    for run in runs(1) {
+                        draw_quads(&mut pass, run.clone());
+                    }
                     pass.set_pipeline(&self.sprite_unclipped);
-                    draw_quads(&mut pass, p.unclipped.clone());
+                    for run in runs(2) {
+                        draw_quads(&mut pass, run.clone());
+                    }
                 }
             }
         }

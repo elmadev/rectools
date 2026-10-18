@@ -9,6 +9,8 @@
 - Following a ghost, the minimap shows the apples it has taken, where it showed the main
   replay's.
 - The ground and sky take less of the GPU to draw.
+- Levels with a lot of grass, or many pictures, take much less to draw: only what is in view
+  is drawn.
 
 ## 0.2.1 - 2026-10-17
 

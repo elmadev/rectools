@@ -131,6 +131,7 @@ pub fn scene(
     let extent = (max + margin - origin) * PIXELS_PER_METER;
 
     Ok(Scene {
+        id: crate::scene::next_scene_id(),
         atlas_size: atlas.layer_size(),
         atlas_layers: atlas.into_layers(),
         // Across has no shirts to find room for
