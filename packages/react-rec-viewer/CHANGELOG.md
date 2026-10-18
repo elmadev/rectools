@@ -6,6 +6,8 @@
 - Playing takes a little less work each frame: the time shown is changed in place.
 - Replays added to the end of `ghosts` are merged into the replay playing, from the same
   moment with the same view, without loading it again.
+- Following a ghost, the minimap shows the apples it has taken, where it showed the main
+  replay's.
 
 ## 0.2.1 - 2026-10-17
 

@@ -6,7 +6,7 @@ use crate::camera::{self, view_corner};
 use crate::hud::{PixelRect, last_apple_rects, timer_rects};
 use crate::instance::{CanvasRect, Instance, mode, snap_to_pixel_center};
 use crate::options::{CameraMode, GhostStyle, RenderOptions, TextureZoom, ViewParams};
-use crate::scene::{Look, Scene, TextureRef, dynamic_instances};
+use crate::scene::{Look, Scene, TextureRef, dynamic_instances, taken_by};
 use bytemuck::{Pod, Zeroable};
 use replay::{Session, TIME_TO_CENTISECONDS, Vec2};
 use std::ops::Range;
@@ -375,12 +375,19 @@ pub fn plan(
                 scratch.push(crate::minimap::fill(&p, m.ground, false));
                 scratch.push(crate::minimap::fill(&p, m.sky, false));
                 let icons_start = scratch.len() as u32;
+                // Following a ghost, the apples it has taken are gone instead of the main
+                // riders', as in the view
+                let taken = followed_ghost.map(|g| taken_by(g, session));
+                let active = |i: usize| match &taken {
+                    Some(taken) => !taken[i],
+                    None => session.objects[i].active,
+                };
                 crate::minimap::icons(
                     m,
                     &p,
                     session,
                     rider.pose.bike_r,
-                    &|i| session.objects[i].active,
+                    &active,
                     session.time,
                     scratch,
                 );
@@ -623,6 +630,24 @@ mod tests {
         assert!(minimap.inner[0] > 320 && minimap.inner[1] > 240);
         assert_eq!(minimap.border[0] + 1, minimap.inner[0]);
         assert!(!minimap.icons.is_empty());
+    }
+
+    #[test]
+    fn the_minimap_shows_the_apples_of_the_bike_followed() {
+        let (scene, mut session) = setup(1);
+        // The main replay took the apple and the ghost didn't
+        let food = session
+            .objects
+            .iter()
+            .position(|o| o.kind == ObjectType::Food)
+            .unwrap();
+        session.objects[food].active = false;
+        let icons = |follow| {
+            let frame = planned(&scene, &session, &[view(follow, false, true)]);
+            frame.views[0].minimap.as_ref().unwrap().icons.len()
+        };
+        // Four pieces of a ring
+        assert_eq!(icons(1), icons(0) + 4);
     }
 
     #[test]

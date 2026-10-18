@@ -12,7 +12,7 @@ use elma_formats::Graphics;
 use elma_formats::lev::{Clipping, Gravity, Level, ObjectType};
 use elma_formats::lgr::{ANIM_WIDTH, Anim, BikePics, Image, Lgr};
 use elma_formats::pic::{Pic8, decode_bmp};
-use replay::{LevelObject, Session, Vec2};
+use replay::{LevelObject, Rider, Session, Vec2};
 use std::ops::Range;
 
 const MARGIN_X: f64 = 10000.0 / M2P;
@@ -611,6 +611,17 @@ impl Default for DynamicOptions {
     }
 }
 
+// By object, whether `ghost` has taken it by the session's time
+pub(crate) fn taken_by(ghost: &Rider, session: &Session) -> Vec<bool> {
+    let mut taken = vec![false; session.objects.len()];
+    for i in ghost.touched(session.time) {
+        if let Some(t) = taken.get_mut(i) {
+            *t = true;
+        }
+    }
+    taken
+}
+
 // Objects and bikes of the view following main rider `follow`, or ghost `ghost` when it
 // follows one: then the apples it has taken are gone instead of the main riders', and it is
 // drawn over every other bike. Returns where the other ghosts are in `out`.
@@ -627,15 +638,9 @@ pub fn dynamic_instances(
     placed: &mut Vec<(usize, CanvasRect)>,
 ) -> std::ops::Range<u32> {
     let time = session.time;
-    let taken_by_ghost = ghost.and_then(|g| session.ghosts.get(g)).map(|g| {
-        let mut taken = vec![false; session.objects.len()];
-        for i in g.touched(time) {
-            if let Some(t) = taken.get_mut(i) {
-                *t = true;
-            }
-        }
-        taken
-    });
+    let taken_by_ghost = ghost
+        .and_then(|g| session.ghosts.get(g))
+        .map(|g| taken_by(g, session));
     let active = |i: usize, object: &LevelObject| match &taken_by_ghost {
         Some(taken) => !taken[i],
         None => object.active,
