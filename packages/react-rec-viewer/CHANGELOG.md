@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - 2026-10-19
 
 - No more "Draw with an instance count of 0" warnings in the console.
 - Playing takes a little less work each frame: the time shown is changed in place.
