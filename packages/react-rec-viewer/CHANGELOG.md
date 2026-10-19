@@ -19,6 +19,8 @@
   gzipped, from 1.13 MB). The package has a second build, with WebGL2, for the others.
 - `preload` starts the downloads and the engine for a `RecPlayer` that isn't shown yet, such as
   while a page waits for its own data.
+- Shirts, and an Elma level's LGR, start downloading with the replays and the level, rather
+  than once the replays have arrived and the engine has read them.
 
 ## 0.2.1 - 2026-10-17
 

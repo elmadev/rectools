@@ -149,6 +149,11 @@ export interface LoadedSources {
   bikes: number[];
 }
 
+// An Elma level file, rather than an Across one (POT06)
+function isElmaLevel(lev: Uint8Array): boolean {
+  return String.fromCharCode(...lev.subarray(0, 5)) === "POT14";
+}
+
 // Everything a replay is drawn from, in the order given however the downloads finish.
 // Fails with a RecViewerError naming the file that couldn't be had.
 export async function loadSources(sources: Sources): Promise<LoadedSources> {
@@ -173,15 +178,23 @@ export async function loadSources(sources: Sources): Promise<LoadedSources> {
   const infosPromise = recsPromise.then((recs) =>
     Promise.all(recs.map((rec, i) => (i === 0 ? asKind("rec", inspectRec(rec)) : inspectRec(rec).catch(() => null)))),
   );
+  // The shirts, and an Elma level's LGR, download without waiting for the replays to be read,
+  // which needs the engine. Another level's LGR waits: it may be an Across level, whose
+  // replays are drawn without one.
+  const shirtsPromise = Promise.all(sources.recUrls.map((_, i) => shirt(i)));
+  const earlyLgr = levPromise.then((lev) =>
+    !sources.across && isElmaLevel(lev) ? asKind("lgr", loadLgr(sources, lev)) : undefined,
+  );
+  earlyLgr.catch(() => {});
   const first = await infosPromise.then((infos) => infos[0]);
   if (first?.across || (sources.across && sources.recUrls.length === 0)) {
     return loadAcross(sources, await recsPromise, first);
   }
   const [lev, lgr, recs, shirts, infos] = await Promise.all([
     levPromise,
-    levPromise.then((lev) => asKind("lgr", loadLgr(sources, lev))),
+    levPromise.then(async (lev) => (await earlyLgr) ?? asKind("lgr", loadLgr(sources, lev))),
     recsPromise,
-    Promise.all(sources.recUrls.map((_, i) => shirt(i))),
+    shirtsPromise,
     infosPromise,
   ]);
   const ghosts: GhostInput[] = recs.slice(1).map((rec, i) => ({ rec, shirt: shirts[i + 1] }));
