@@ -36,6 +36,17 @@ import { RecPlayer } from "@elmadev/react-rec-viewer";
 Changing the merged replays while the first stays carries on from the same moment.
 Downloads are cached by URL. Everything else is passed to `RecViewer`.
 
+A page that knows the URLs before it can show the player, say while it waits for its own data,
+can start on them with `preload`. It takes the same props, loads the engine, and downloads the
+replays, shirts, level and the LGR the level asks for, which the `RecPlayer` then gets from the
+cache:
+
+```js
+import { preload } from "@elmadev/react-rec-viewer";
+
+preload({ levUrl: "https://api.elma.online/dl/level/123" });
+```
+
 ## From bytes: `RecViewer`
 
 `RecViewer` takes the files as `Uint8Array`s: `rec`, `lev`, `lgr`, `res` (`elma.res`, for

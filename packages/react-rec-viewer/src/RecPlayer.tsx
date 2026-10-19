@@ -1,7 +1,7 @@
 import { CSSProperties, forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import { ReplayInput } from "./engine.js";
 import { RecViewerError, toRecError } from "./errors.js";
-import { loadSources } from "./loaders.js";
+import { ELMA_ONLINE_DEFAULT_LGR, ELMA_ONLINE_LGR, loadSources } from "./loaders.js";
 import { RecViewer, RecViewerHandle, RecViewerProps } from "./RecViewer.js";
 
 export interface RecPlayerProps
@@ -28,9 +28,6 @@ export interface RecPlayerProps
   // Passed to fetch, for credentials or headers
   fetchInit?: RequestInit;
 }
-
-const ELMA_ONLINE_LGR = (name: string) => `https://api.elma.online/api/lgr/get/${encodeURIComponent(name)}`;
-const ELMA_ONLINE_DEFAULT_LGR = "https://api.elma.online/api/lgr/get/default";
 
 const overlay: CSSProperties = {
   position: "absolute",

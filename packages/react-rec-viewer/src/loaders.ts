@@ -6,6 +6,7 @@ import {
   inspectLevel,
   inspectRec,
   levelLgrName,
+  loadEngine,
 } from "./engine.js";
 import { HttpError, RecViewerError, asKind } from "./errors.js";
 
@@ -55,7 +56,9 @@ export interface Sources {
   init?: RequestInit;
 }
 
-async function loadLgr(sources: Sources, lev: Uint8Array): Promise<Uint8Array> {
+type LgrSources = Pick<Sources, "lgrUrl" | "lgrFileUrl" | "defaultLgrUrl" | "init">;
+
+async function loadLgr(sources: LgrSources, lev: Uint8Array): Promise<Uint8Array> {
   const get = (url: string) => fetchBytes(url, sources.init);
   try {
     // Read from the level as it is, without waiting for the engine to load
@@ -69,6 +72,45 @@ async function loadLgr(sources: Sources, lev: Uint8Array): Promise<Uint8Array> {
       throw e;
     }
   }
+}
+
+// What preload starts on: the RecPlayer props it will be given, by the same names. What is
+// left out isn't fetched.
+export interface PreloadSources {
+  recUrls?: string[];
+  levUrl?: string;
+  shirtUrls?: (string | null | undefined)[];
+  // With RecPlayer's defaults
+  lgrUrl?: (name: string) => string;
+  lgrFileUrl?: string;
+  defaultLgrUrl?: string;
+  fetchInit?: RequestInit;
+}
+
+export const ELMA_ONLINE_LGR = (name: string) => `https://api.elma.online/api/lgr/get/${encodeURIComponent(name)}`;
+export const ELMA_ONLINE_DEFAULT_LGR = "https://api.elma.online/api/lgr/get/default";
+
+// Starts loading the engine and downloading what a RecPlayer given the same URLs needs: the
+// replays, their shirts, the level and the LGR it asks for. The RecPlayer then finds them
+// downloaded or on their way. For a page that knows the URLs before it can show the player,
+// such as while it waits for its own data. Failures are left for the RecPlayer to report.
+export function preload(sources: PreloadSources): void {
+  const ignore = () => {};
+  loadEngine().catch(ignore);
+  const get = (url: string) => fetchBytes(url, sources.fetchInit);
+  for (const url of [...(sources.recUrls ?? []), ...(sources.shirtUrls ?? [])]) {
+    if (url) get(url).catch(ignore);
+  }
+  if (!sources.levUrl) return;
+  const lgr: LgrSources = {
+    lgrUrl: sources.lgrUrl ?? ELMA_ONLINE_LGR,
+    lgrFileUrl: sources.lgrFileUrl,
+    defaultLgrUrl: sources.defaultLgrUrl ?? ELMA_ONLINE_DEFAULT_LGR,
+    init: sources.fetchInit,
+  };
+  get(sources.levUrl)
+    .then((lev) => loadLgr(lgr, lev))
+    .catch(ignore);
 }
 
 // A bmp as it is, anything else (sites serve shirts as png) decoded by the browser

@@ -17,6 +17,8 @@
   rather than after.
 - Browsers with WebGPU download a fifth of the engine: 0.55 MB rather than 2.9 MB (216 KB
   gzipped, from 1.13 MB). The package has a second build, with WebGL2, for the others.
+- `preload` starts the downloads and the engine for a `RecPlayer` that isn't shown yet, such as
+  while a page waits for its own data.
 
 ## 0.2.1 - 2026-10-17
 
