@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.2 - 2026-10-20
 
 - The engine is built from this release's code. 0.3.1's had two unfinished changes in it by
   mistake, which draw the same and cost nothing, so nothing changes in use.
