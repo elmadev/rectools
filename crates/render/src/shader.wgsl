@@ -148,22 +148,22 @@ fn vs_instance(@builtin(vertex_index) vertex: u32, instance: InstanceIn) -> Vert
 
 // The level's pictures: what `shade` reads, without the bikes' affine quads and with the small
 // values packed, as the pictures are many and reading every pixel's inputs took most of their
-// time
+// time. No integer between the stages has more than 16 bits, which is all some GPUs pass on
+// (Adreno in a Samsung A52s). The packed ones are masked when read, in case the top bit was
+// spread; the atlas rects are under 8192, so theirs never is.
 struct PictureOut {
     @builtin(position) position: vec4<f32>,
     @location(0) st: vec2<f32>,
-    // The mode, transparency (9 bits), color and layer; the atlas layers and the orientation;
-    // the image rect's x and y, and its width and height, 16 bits each
-    @location(1) @interpolate(flat) packed: vec4<u32>,
-    // The texture rect's x and y, and its width and height
-    @location(2) @interpolate(flat) texture: vec2<u32>,
+    // mode | color << 8; transparency (9 bits) | layer << 9 | orientation << 12; the atlas
+    // layers, image | texture << 8
+    @location(1) @interpolate(flat) packed: vec3<u32>,
+    // The image rect's x and y, and its width and height
+    @location(2) @interpolate(flat) image: vec4<u32>,
+    // The texture rect's
+    @location(3) @interpolate(flat) texture: vec4<u32>,
     // The texture's size in game pixels, and resize_rounding
-    @location(3) @interpolate(flat) sizes: vec4<f32>,
-    @location(4) @interpolate(flat) rect: vec4<i32>,
-}
-
-fn pack16(a: u32, b: u32) -> u32 {
-    return a | (b << 16u);
+    @location(4) @interpolate(flat) sizes: vec3<f32>,
+    @location(5) @interpolate(flat) rect: vec4<i32>,
 }
 
 @vertex
@@ -173,17 +173,14 @@ fn vs_picture(@builtin(vertex_index) vertex: u32, instance: InstanceIn) -> Pictu
     out.position = instance_position(st, instance);
     out.st = st;
     let p = instance.params;
-    out.packed = vec4<u32>(
-        p.x | (p.y << 8u) | (p.z << 17u) | (p.w << 25u),
-        instance.atlas_layers | (instance.orientation << 16u),
-        pack16(instance.image.x, instance.image.y),
-        pack16(instance.image.z, instance.image.w),
+    out.packed = vec3<u32>(
+        p.x | (p.z << 8u),
+        p.y | (p.w << 9u) | (instance.orientation << 12u),
+        instance.atlas_layers,
     );
-    out.texture = vec2<u32>(
-        pack16(instance.texture.x, instance.texture.y),
-        pack16(instance.texture.z, instance.texture.w),
-    );
-    out.sizes = vec4<f32>(instance.texture_size, instance.rounding, 0.0);
+    out.image = instance.image;
+    out.texture = instance.texture;
+    out.sizes = vec3<f32>(instance.texture_size, instance.rounding);
     out.rect = instance.rect;
     return out;
 }
@@ -193,28 +190,14 @@ fn unpacked(p: PictureOut) -> VertexOut {
     var in: VertexOut;
     in.position = p.position;
     in.st = p.st;
-    let params = p.packed.x;
-    in.params = vec4<u32>(
-        params & 0xffu,
-        (params >> 8u) & 0x1ffu,
-        (params >> 17u) & 0xffu,
-        params >> 25u,
-    );
-    let layers = p.packed.y;
+    let a = p.packed.x;
+    let b = p.packed.y;
+    in.params = vec4<u32>(a & 0xffu, b & 0x1ffu, (a >> 8u) & 0xffu, (b >> 9u) & 0x7u);
+    in.orientation = (b >> 12u) & 0x7u;
+    let layers = p.packed.z;
     in.atlas_layers = vec2<u32>(layers & 0xffu, (layers >> 8u) & 0xffu);
-    in.orientation = layers >> 16u;
-    in.image = vec4<u32>(
-        p.packed.z & 0xffffu,
-        p.packed.z >> 16u,
-        p.packed.w & 0xffffu,
-        p.packed.w >> 16u,
-    );
-    in.texture = vec4<u32>(
-        p.texture.x & 0xffffu,
-        p.texture.x >> 16u,
-        p.texture.y & 0xffffu,
-        p.texture.y >> 16u,
-    );
+    in.image = p.image;
+    in.texture = p.texture;
     in.texture_size = p.sizes.xy;
     in.rounding = p.sizes.z;
     in.rect = p.rect;
