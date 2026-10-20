@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 - 2026-10-20
 
 - Pictures and grass can't come out as stripes on phones whose GPU passes only 16 bits of
   each number between shader stages, such as some with Adreno. 0.3.0 had them at risk again.
