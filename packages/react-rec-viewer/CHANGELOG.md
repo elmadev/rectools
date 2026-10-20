@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The engine is built from this release's code. 0.3.1's had two unfinished changes in it by
+  mistake, which draw the same and cost nothing, so nothing changes in use.
+
 ## 0.3.1 - 2026-10-20
 
 - Pictures and grass can't come out as stripes on phones whose GPU passes only 16 bits of

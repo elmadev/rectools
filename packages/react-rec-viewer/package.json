@@ -24,6 +24,7 @@
   "scripts": {
     "build:wasm": "node scripts/build-wasm.mjs",
     "build": "node scripts/build-wasm.mjs && tsc -p tsconfig.json",
+    "prepublishOnly": "pnpm build",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
