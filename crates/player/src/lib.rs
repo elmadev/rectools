@@ -659,7 +659,9 @@ impl Player {
             dynamic: DynamicOptions {
                 gravity_arrows: s.level.arrows,
                 animated_objects: s.level.animated_objects,
-                still_objects: s.level.still_objects,
+                // A level alone has no clock to bob them with, so bobbing would only put
+                // them out of step
+                still_objects: s.level.still_objects || self.level_only(),
                 pictures_in_background: s.pictures_in_background,
             },
             ghosts: GhostStyle::new(s.translucent_ghosts),

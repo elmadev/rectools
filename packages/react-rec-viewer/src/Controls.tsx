@@ -265,11 +265,13 @@ function Settings(p: ControlsProps) {
       />
       {!p.across && (
         <>
-          <Toggle
-            label="Still objects"
-            value={o.stillObjects}
-            onChange={(stillObjects) => p.onLevelOptions({ stillObjects })}
-          />
+          {!p.levelOnly && (
+            <Toggle
+              label="Still objects"
+              value={o.stillObjects}
+              onChange={(stillObjects) => p.onLevelOptions({ stillObjects })}
+            />
+          )}
           <Toggle
             label="Pictures in background"
             value={p.picturesInBackground}

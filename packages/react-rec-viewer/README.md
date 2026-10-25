@@ -68,7 +68,7 @@ Settings with a `default…` and an `on…Change` can be controlled or left to t
 | `translucentGhosts` | false | Merged replays blue and see-through (not on WebGL2) |
 | `picturesInBackground` | true | Bikes and objects over every picture |
 | `zoomTextures` | true | The ground, sky and grass textures grow with the zoom, like the pictures. Off keeps them at their size at zoom 1, like elma-classic's "Zoom Textures" off. |
-| `levelOptions` | all on but `stillObjects` | `{ grass, pictures, customSky, arrows, animatedObjects, stillObjects, fancyboost }`. Fancyboost is the 256 single color pictures of a fancyboosted LGR, which every LGR gets. |
+| `levelOptions` | all on but `stillObjects` | `{ grass, pictures, customSky, arrows, animatedObjects, stillObjects, fancyboost }`. A level without a replay always has still objects. Fancyboost is the 256 single color pictures of a fancyboosted LGR, which every LGR gets. |
 | `splitScreen` | true | Both bikes of a two player replay |
 | `loop` | true | Start over after the end |
 | `time` | | Seek here when it changes |

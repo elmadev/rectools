@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Objects are always still in a level shown without a replay, and the "Still objects"
+  setting is gone from there. They didn't bob anyway, only went out of step.
+
 ## 0.3.3 - 2026-10-25
 
 - Fixed the player freezing on Pixel 10 phones when the bike reached an apple, the exit or a

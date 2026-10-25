@@ -376,3 +376,18 @@ fn textures_grow_with_the_zoom_unless_turned_off() {
     p.set_zoom_textures(false);
     assert!(!p.render_options().zoom_textures);
 }
+
+#[test]
+fn a_level_on_its_own_has_still_objects() {
+    let mut p = Player::new(Settings::default());
+    p.load(
+        Content {
+            level_only: true,
+            ..content(0.0, 0)
+        },
+        false,
+    );
+    assert!(p.render_options().dynamic.still_objects);
+    p.load(content(10.0, 0), false);
+    assert!(!p.render_options().dynamic.still_objects);
+}
