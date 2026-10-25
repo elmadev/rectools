@@ -294,6 +294,7 @@ pub enum Action {
     ToggleArrows,
     ToggleTimer,
     ToggleMinimap,
+    NextMinimapSize,
     ToggleLastAppleTime,
     ShowEverything,
 }
@@ -323,6 +324,7 @@ impl From<Action> for player::Action {
             Action::ToggleArrows => A::ToggleArrows,
             Action::ToggleTimer => A::ToggleTimer,
             Action::ToggleMinimap => A::ToggleMinimap,
+            Action::NextMinimapSize => A::NextMinimapSize,
             Action::ToggleLastAppleTime => A::ToggleLastAppleTime,
             Action::ShowEverything => A::ShowEverything,
         }
@@ -389,6 +391,8 @@ pub struct ViewerState {
     pub centered_camera: bool,
     pub timer: bool,
     pub minimap: bool,
+    #[wasm_bindgen(js_name = minimapSize)]
+    pub minimap_size: f64,
     #[wasm_bindgen(js_name = lastAppleTime)]
     pub last_apple_time: bool,
     #[wasm_bindgen(js_name = autoZoom)]
@@ -717,6 +721,7 @@ impl Viewer {
             centered_camera: s.centered_camera,
             timer: s.timer,
             minimap: s.minimap,
+            minimap_size: s.minimap_size,
             last_apple_time: s.last_apple_time,
             auto_zoom: s.auto_zoom,
             auto_zoom_paused: p.auto_zoom_paused(),
@@ -891,6 +896,13 @@ impl Viewer {
     #[wasm_bindgen(js_name = setMinimap)]
     pub fn set_minimap(&mut self, minimap: bool) {
         self.player.set_minimap(minimap);
+    }
+
+    // Times the game's size, from 1 to 3, as elma-classic's "Minimap Size": a bigger minimap
+    // shows more of the level around the bike
+    #[wasm_bindgen(js_name = setMinimapSize)]
+    pub fn set_minimap_size(&mut self, size: f64) {
+        self.player.set_minimap_size(size);
     }
 
     #[wasm_bindgen(js_name = setLastAppleTime)]

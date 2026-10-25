@@ -431,6 +431,7 @@ fn render(
         hud_scale: 1,
         large_font: false,
         hud_bottom_inset: 0,
+        minimap_size: 1.0,
     };
 
     let fps = opts.fps as f64;

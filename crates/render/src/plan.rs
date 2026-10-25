@@ -443,8 +443,14 @@ pub fn plan(
                 None if params.camera == CameraMode::Centered => (rider.pose.bike_r, 0.5),
                 None => (rider.pose.bike_r, 0.2 + phase * 0.6),
             };
-            let placed =
-                crate::minimap::place(&scene.minimap, params.viewport, lift, anchor, fraction);
+            let placed = crate::minimap::place(
+                &scene.minimap,
+                params.viewport,
+                options.minimap_size,
+                lift,
+                anchor,
+                fraction,
+            );
             placed.map(|p| {
                 let uniform = |rect: [u32; 4], corner: Vec2| {
                     let f2 = |v: Vec2| [v.x as f32, v.y as f32];
@@ -862,6 +868,28 @@ mod tests {
         assert_eq!(lifted[1] + 50, not[1]);
         // As far as it still fits
         assert!(minimap_top(&whole, 5000)[0] >= 1);
+    }
+
+    #[test]
+    fn a_bigger_minimap_shows_more_and_shrinks_to_fit() {
+        let (scene, session) = setup(0);
+        let inner = |size| {
+            let mut frame = FramePlan::default();
+            let options = RenderOptions {
+                minimap_size: size,
+                ..Default::default()
+            };
+            let views = [view(0, false, true)];
+            plan_session(&mut frame, &scene, &session, &views, &options, (640, 480)).unwrap();
+            frame.views[0].minimap.as_ref().unwrap().inner
+        };
+        assert_eq!(inner(1.0)[2..], [140, 70]);
+        assert_eq!(inner(2.0)[2..], [280, 140]);
+        assert_eq!(inner(0.5)[2..], [140, 70]);
+        // No wider than the view, still in its corner
+        let huge = inner(100.0);
+        assert!(huge[0] >= 1 && huge[0] + huge[2] <= 640, "{huge:?}");
+        assert!(huge[1] >= 1 && huge[1] + huge[3] <= 480, "{huge:?}");
     }
 
     #[test]

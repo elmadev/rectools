@@ -87,6 +87,11 @@ export interface RecViewerProps extends ReplayInput {
   minimap?: boolean;
   defaultMinimap?: boolean;
   onMinimapChange?: (value: boolean) => void;
+  // Times the game's size, from 1 to 3, like elma-classic's "Minimap Size": a bigger minimap
+  // shows more of the level around the bike. 1 unless set.
+  minimapSize?: number;
+  defaultMinimapSize?: number;
+  onMinimapSizeChange?: (value: number) => void;
   // The game's "last apple" time in the bottom right corner, on unless set. Not for Across.
   lastAppleTime?: boolean;
   defaultLastAppleTime?: boolean;
@@ -229,6 +234,7 @@ interface State {
   centeredCamera: boolean;
   timer: boolean;
   minimap: boolean;
+  minimapSize: number;
   lastAppleTime: boolean;
   autoZoom: boolean;
   translucentGhosts: boolean;
@@ -254,6 +260,7 @@ function readState(viewer: Viewer): State {
     centeredCamera: s.centeredCamera,
     timer: s.timer,
     minimap: s.minimap,
+    minimapSize: s.minimapSize,
     lastAppleTime: s.lastAppleTime,
     autoZoom: s.autoZoom,
     translucentGhosts: s.translucentGhosts,
@@ -283,6 +290,7 @@ type Setting =
   | "centeredCamera"
   | "timer"
   | "minimap"
+  | "minimapSize"
   | "lastAppleTime"
   | "autoZoom"
   | "translucentGhosts"
@@ -298,6 +306,7 @@ const APPLY: { [K in Setting]: (viewer: Viewer, value: State[K]) => void } = {
   centeredCamera: (v, x) => v.setCenteredCamera(x),
   timer: (v, x) => v.setTimer(x),
   minimap: (v, x) => v.setMinimap(x),
+  minimapSize: (v, x) => v.setMinimapSize(x),
   lastAppleTime: (v, x) => v.setLastAppleTime(x),
   autoZoom: (v, x) => v.setAutoZoom(x),
   translucentGhosts: (v, x) => v.setTranslucentGhosts(x),
@@ -371,6 +380,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     centeredCamera: props.centeredCamera,
     timer: props.timer,
     minimap: props.minimap,
+    minimapSize: props.minimapSize,
     lastAppleTime: props.lastAppleTime,
     autoZoom: props.autoZoom,
     translucentGhosts: props.translucentGhosts,
@@ -387,6 +397,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     centeredCamera: props.defaultCenteredCamera ?? true,
     timer: props.defaultTimer ?? true,
     minimap: props.defaultMinimap ?? false,
+    minimapSize: props.defaultMinimapSize ?? 1,
     lastAppleTime: props.defaultLastAppleTime ?? true,
     autoZoom: props.defaultAutoZoom ?? false,
     translucentGhosts: props.defaultTranslucentGhosts ?? false,
@@ -403,6 +414,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     centeredCamera: props.onCenteredCameraChange,
     timer: props.onTimerChange,
     minimap: props.onMinimapChange,
+    minimapSize: props.onMinimapSizeChange,
     lastAppleTime: props.onLastAppleTimeChange,
     autoZoom: props.onAutoZoomChange,
     translucentGhosts: props.onTranslucentGhostsChange,
@@ -1001,6 +1013,8 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
             onTimer={(x) => change((v) => v.setTimer(x))}
             minimap={s?.minimap ?? false}
             onMinimap={(x) => change((v) => v.setMinimap(x))}
+            minimapSize={s?.minimapSize ?? 1}
+            onMinimapSize={(x) => change((v) => v.setMinimapSize(x))}
             lastAppleTime={s?.lastAppleTime ?? true}
             onLastAppleTime={(x) => change((v) => v.setLastAppleTime(x))}
             picturesInBackground={s?.picturesInBackground ?? true}

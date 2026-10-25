@@ -113,6 +113,9 @@ pub struct RenderOptions {
     // Target pixels at the bottom that something lies over, such as a player's controls. The
     // last apple time and the minimap, in the bottom right, move up out of them.
     pub hud_bottom_inset: u32,
+    // The minimap this many times the game's size, showing more of the level around the bike,
+    // as elma-classic's "Minimap Size". Smaller than 1 is taken as 1, and it shrinks to fit.
+    pub minimap_size: f64,
 }
 
 impl Default for RenderOptions {
@@ -125,6 +128,7 @@ impl Default for RenderOptions {
             hud_scale: 0,
             large_font: false,
             hud_bottom_inset: 0,
+            minimap_size: 1.0,
         }
     }
 }

@@ -391,3 +391,23 @@ fn a_level_on_its_own_has_still_objects() {
     p.load(content(10.0, 0), false);
     assert!(!p.render_options().dynamic.still_objects);
 }
+
+#[test]
+fn shift_v_shows_the_minimap_at_its_next_size() {
+    let mut p = player(2.0, 0);
+    p.key("V", false);
+    assert!(p.settings().minimap);
+    assert_eq!(p.settings().minimap_size, MINIMAP_SIZES[1]);
+    for _ in 2..MINIMAP_SIZES.len() {
+        p.key("V", false);
+    }
+    assert_eq!(p.settings().minimap_size, 3.0);
+    p.key("V", false);
+    assert_eq!(p.settings().minimap_size, 1.0);
+    // Between two sizes goes to the next one up
+    p.set_minimap_size(1.4);
+    p.key("V", false);
+    assert_eq!(p.settings().minimap_size, MINIMAP_SIZES[2]);
+    p.set_minimap_size(10.0);
+    assert_eq!(p.render_options().minimap_size, 3.0);
+}

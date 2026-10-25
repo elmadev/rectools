@@ -42,6 +42,8 @@ export interface ControlsProps {
   onTimer(value: boolean): void;
   minimap: boolean;
   onMinimap(value: boolean): void;
+  minimapSize: number;
+  onMinimapSize(value: number): void;
   lastAppleTime: boolean;
   onLastAppleTime(value: boolean): void;
   picturesInBackground: boolean;
@@ -142,6 +144,12 @@ const menu: CSSProperties = {
   boxShadow: "0 4px 16px rgba(0, 0, 0, 0.5)",
 };
 
+// player::MINIMAP_SIZES, elma-classic's "Minimap Size" choices: 140x70 to 420x210 in Elma
+const MINIMAP_SIZES = [1, 9 / 7, 11 / 7, 2, 2.5, 3];
+// The choice shown for a size set between two of them
+const nearestMinimapSize = (size: number) =>
+  MINIMAP_SIZES.reduce((a, b) => (Math.abs(b - size) < Math.abs(a - size) ? b : a));
+
 const row: CSSProperties = { display: "flex", alignItems: "center", gap: 6, cursor: "pointer" };
 const heading: CSSProperties = { margin: "4px 0 0", fontSize: 11, textTransform: "uppercase", color: "#999" };
 
@@ -199,6 +207,26 @@ function Settings(p: ControlsProps) {
           <Toggle label="Centered camera" value={p.centeredCamera} onChange={p.onCenteredCamera} />
           <Toggle label="Timer" value={p.timer} onChange={p.onTimer} />
           <Toggle label="Minimap" value={p.minimap} onChange={p.onMinimap} />
+          {p.minimap && (
+            <label style={{ ...row, cursor: "default" }}>
+              Minimap size
+              <select
+                aria-label="Minimap size"
+                value={nearestMinimapSize(p.minimapSize)}
+                onChange={(e) => p.onMinimapSize(Number(e.target.value))}
+                style={{ ...buttonStyle, height: 24, flex: 1, minWidth: 0 }}
+              >
+                {MINIMAP_SIZES.map((size) => {
+                  const [w, h] = p.across ? [200, 80] : [140, 70];
+                  return (
+                    <option key={size} value={size}>
+                      {Math.round(w * size)}×{Math.round(h * size)}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+          )}
           {!p.across && (
             <>
               <Toggle label="Last apple time" value={p.lastAppleTime} onChange={p.onLastAppleTime} />

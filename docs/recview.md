@@ -61,7 +61,7 @@ The same as the web player's:
 | A | Gravity arrows |
 | Shift G | Grass, pictures and the level's own ground and sky on |
 | T | Timer |
-| V | Minimap |
+| V / Shift V | Minimap / its size |
 | X | Last apple time |
 
 And recview's own:

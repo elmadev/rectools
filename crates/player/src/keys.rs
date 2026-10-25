@@ -30,6 +30,8 @@ pub enum Action {
     ToggleArrows,
     ToggleTimer,
     ToggleMinimap,
+    // The minimap shown, at its next size
+    NextMinimapSize,
     ToggleLastAppleTime,
     // Grass, pictures and the level's own ground and sky on
     ShowEverything,
@@ -143,8 +145,12 @@ const BINDINGS: &[Binding] = &[
         action: Action::ToggleTimer,
     },
     Binding {
-        keys: &["v", "V"],
+        keys: &["v"],
         action: Action::ToggleMinimap,
+    },
+    Binding {
+        keys: &["V"],
+        action: Action::NextMinimapSize,
     },
     Binding {
         keys: &["x", "X"],
@@ -205,7 +211,7 @@ pub const KEYS: &[KeyHelp] = &[
     level("G", "Grass", true),
     level("A", "Gravity arrows", true),
     help("T", "Timer"),
-    help("V", "Minimap"),
+    help("V / Shift V", "Minimap / its size"),
     help("X", "Last apple time"),
     level(
         "Shift G",

@@ -21,6 +21,9 @@ pub const ZOOM_STEP: f64 = 1.2;
 pub const SEEK_SECONDS: f64 = 2.5;
 // What stepping one frame moves
 pub const FRAME_SECONDS: f64 = 1.0 / 30.0;
+// The minimap's sizes, times the game's: elma-classic's "Minimap Size" choices, 140x70 to
+// 420x210
+pub const MINIMAP_SIZES: [f64; 6] = [1.0, 9.0 / 7.0, 11.0 / 7.0, 2.0, 2.5, 3.0];
 
 // A bike of the session: its riders, then its ghosts
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -68,6 +71,8 @@ pub struct Settings {
     pub split_screen: bool,
     pub timer: bool,
     pub minimap: bool,
+    // Times the game's size, one of MINIMAP_SIZES or between them
+    pub minimap_size: f64,
     // The game's "last apple" row in the bottom right
     pub last_apple_time: bool,
     // Zoom out when needed so every bike stays in view
@@ -94,6 +99,7 @@ impl Default for Settings {
             split_screen: true,
             timer: true,
             minimap: false,
+            minimap_size: 1.0,
             last_apple_time: true,
             auto_zoom: false,
             translucent_ghosts: false,
@@ -408,6 +414,15 @@ impl Player {
             Action::FollowPrevious => self.follow_next(-1),
             Action::ToggleTimer => self.settings.timer = !self.settings.timer,
             Action::ToggleMinimap => self.settings.minimap = !self.settings.minimap,
+            // Shown, and the next size up, round to the smallest after the biggest
+            Action::NextMinimapSize => {
+                let current = self.settings.minimap_size;
+                self.settings.minimap = true;
+                self.settings.minimap_size = MINIMAP_SIZES
+                    .into_iter()
+                    .find(|&s| s > current + 1e-6)
+                    .unwrap_or(MINIMAP_SIZES[0]);
+            }
             Action::ToggleLastAppleTime => {
                 self.settings.last_apple_time = !self.settings.last_apple_time
             }
@@ -581,6 +596,14 @@ impl Player {
         self.settings.minimap = minimap;
     }
 
+    // Times the game's size, from 1 to the biggest of MINIMAP_SIZES
+    pub fn set_minimap_size(&mut self, size: f64) {
+        let biggest = MINIMAP_SIZES[MINIMAP_SIZES.len() - 1];
+        if size.is_finite() {
+            self.settings.minimap_size = size.clamp(1.0, biggest);
+        }
+    }
+
     pub fn set_last_apple_time(&mut self, shown: bool) {
         self.settings.last_apple_time = shown;
     }
@@ -680,6 +703,7 @@ impl Player {
             hud_scale: 1,
             large_font: s.large_font,
             hud_bottom_inset: 0,
+            minimap_size: s.minimap_size,
         }
     }
 

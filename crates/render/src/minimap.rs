@@ -85,6 +85,8 @@ pub(crate) struct Placement {
 pub(crate) fn place(
     minimap: &Minimap,
     viewport: [u32; 4],
+    // Times the game's size, as far as it fits in the view
+    size: f64,
     // Pixels at the view's bottom to keep clear, as far as the minimap still fits
     lift: u32,
     anchor: Vec2,
@@ -92,12 +94,12 @@ pub(crate) fn place(
 ) -> Option<Placement> {
     let [vx, vy, vw, vh] = viewport.map(|v| v as f64);
     let scale = (vh / 480.0).max(0.5);
-    let (w, h) = (
-        (minimap.size.0 * scale).round(),
-        (minimap.size.1 * scale).round(),
-    );
     // Fixed in the corner, where the games move it across with the camera
     let gap = scale.round().max(1.0);
+    let (base_w, base_h) = (minimap.size.0 * scale, minimap.size.1 * scale);
+    let fits = ((vw - gap - 1.0) / base_w).min((vh - gap - 1.0) / base_h);
+    let size = size.min(fits).max(1.0);
+    let (w, h) = ((base_w * size).round(), (base_h * size).round());
     let x = vw - gap - w;
     let bottom = gap + (lift as f64).min(vh - gap - h - 1.0).max(0.0);
     if x < 1.0 || bottom + h + 1.0 > vh || w < 4.0 || h < 4.0 {

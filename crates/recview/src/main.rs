@@ -7,7 +7,7 @@ mod sound;
 
 use audio::Sounds;
 use game_data::{GameFolder, Ghost, find_file, is_across_rec};
-use player::{Content, Player, Settings, ZOOM_STEP};
+use player::{Content, MINIMAP_SIZES, Player, Settings, ZOOM_STEP};
 use render::{
     GpuScene, MAX_ZOOM, MIN_ZOOM, Output, Renderer, Scene, SceneOptions, Targets, acquire,
     surface_format,
@@ -63,7 +63,7 @@ Keys, the same as the web player's:
   G, shift G          grass / grass, pictures and the level's own sky on
   A                   gravity arrows
   T                   timer
-  V                   minimap
+  V, shift V          minimap / its size
   X                   last apple time
 
 Keys only recview has:
@@ -241,6 +241,14 @@ impl Prefs {
                         prefs.settings.zoom = z.clamp(MIN_ZOOM, MAX_ZOOM);
                     }
                 }
+                "minimap_size" => {
+                    if let Ok(size) = value.trim().parse::<f64>()
+                        && size.is_finite()
+                    {
+                        prefs.settings.minimap_size =
+                            size.clamp(MINIMAP_SIZES[0], MINIMAP_SIZES[5]);
+                    }
+                }
                 // Written by older versions, which had a choice of three
                 "camera" => prefs.settings.centered_camera = value.trim() != "classic",
                 key => {
@@ -262,8 +270,9 @@ impl Prefs {
         }
         let mut text = format!(
             "zoom={}
+minimap_size={}
 ",
-            self.settings.zoom
+            self.settings.zoom, self.settings.minimap_size
         );
         let mut prefs = *self;
         for (key, flag) in Prefs::FLAGS {
