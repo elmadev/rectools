@@ -394,9 +394,7 @@ pub fn plan(
             );
             timer_data.extend(rects.iter().map(|&r| HudRect::new(r, TIMER_COLOR)));
         }
-        if let Some((apples, last)) = params.last_apple
-            && !matches!(scene.look, Look::Across(_))
-        {
+        if let Some((apples, last)) = params.last_apple {
             let rects = last_apple_rects(
                 params.viewport[2] as i32,
                 apples,
@@ -405,7 +403,8 @@ pub fn plan(
                 options.large_font,
             );
             timer_data.extend(rects.iter().map(|r| {
-                let mut rect = HudRect::new(r.rect, r.color as u32);
+                let color = scene.text_colors[r.color as usize];
+                let mut rect = HudRect::new(r.rect, color as u32);
                 rect.rect[1] += lift as f32;
                 rect
             }));

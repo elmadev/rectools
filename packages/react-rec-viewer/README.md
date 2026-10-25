@@ -64,8 +64,8 @@ Settings with a `default…` and an `on…Change` can be controlled or left to t
 | `timer` | true | |
 | `minimap` | false | |
 | `minimapSize` | 1 | Times the game's size, from 1 to 3, like elma-classic's "Minimap Size": a bigger minimap shows more of the level around the bike. Shift V steps through elma-classic's sizes. |
-| `lastAppleTime` | true | The game's "last apple" time in the bottom right (not for Across) |
-| `largeFont` | false | The last apple time in the game's medium font, like elma-classic's "Large Font" (not for Across) |
+| `lastAppleTime` | true | The game's "last apple" time in the bottom right. Across has none of its own, so it is drawn as Elma's. |
+| `largeFont` | false | The last apple time in the game's medium font, like elma-classic's "Large Font" |
 | `autoZoom` | false | Zoom out to keep every bike in view. Moving the camera pauses it. |
 | `translucentGhosts` | false | Merged replays blue and see-through (not on WebGL2) |
 | `picturesInBackground` | true | Bikes and objects over every picture |

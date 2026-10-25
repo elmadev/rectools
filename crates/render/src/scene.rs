@@ -83,6 +83,9 @@ pub struct Scene {
     pub atlas_layers: Vec<Vec<u8>>,
     pub palette: [u8; 768],
     pub timer_map: [u8; 256],
+    // The color the info panel's text is drawn in for each color of the fonts, which are
+    // Elma's: the same for Elma, the nearest in the palette for Across
+    pub text_colors: [u8; 256],
     // Textures are aligned to it
     pub canvas_origin: Vec2,
     // Triangle fans of the solid polygons, for the even-odd sky test
@@ -557,6 +560,7 @@ impl Scene {
             atlas_layers,
             palette: lgr.palette,
             timer_map: lgr.timer_palette_map(),
+            text_colors: std::array::from_fn(|i| i as u8),
             canvas_origin: origin,
             polygon_vertices: polygon_fans(level),
             foreground: texture_ref(fg),

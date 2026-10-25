@@ -33,6 +33,7 @@ struct Options {
     zoom_textures: bool,
     minimap: bool,
     last_apple_time: bool,
+    large_font: bool,
     pause_end: bool,
     pictures_in_background: bool,
     still_objects: bool,
@@ -71,7 +72,10 @@ Options:
   --camera <mode>     classic or centered (default: classic)
   --no-timer          hide the timer
   --minimap           show the minimap
-  --last-apple-time   show the game's last apple time in the bottom right (not for Across)
+  --last-apple-time   show the game's last apple time in the bottom right. Across has
+                      none of its own, so it is drawn as Elma's.
+  --large-font        the last apple time in the medium font, like elma-classic's
+                      Large Font
   --pause-end         hold the last frame for one second
   --pictures-in-background
                       draw the bikes over every picture
@@ -112,6 +116,7 @@ fn parse_arguments() -> Result<Options, String> {
         zoom_textures: true,
         minimap: false,
         last_apple_time: false,
+        large_font: false,
         pause_end: false,
         pictures_in_background: false,
         still_objects: false,
@@ -190,6 +195,7 @@ fn parse_arguments() -> Result<Options, String> {
             "--no-zoom-textures" => opts.zoom_textures = false,
             "--minimap" => opts.minimap = true,
             "--last-apple-time" => opts.last_apple_time = true,
+            "--large-font" => opts.large_font = true,
             "--pause-end" => opts.pause_end = true,
             "--pictures-in-background" => opts.pictures_in_background = true,
             "--still-objects" => opts.still_objects = true,
@@ -429,7 +435,7 @@ fn render(
         zoom_textures: opts.zoom_textures,
         // The game's 1 pixel lines
         hud_scale: 1,
-        large_font: false,
+        large_font: opts.large_font,
         hud_bottom_inset: 0,
         minimap_size: 1.0,
     };

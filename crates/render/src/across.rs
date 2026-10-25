@@ -139,6 +139,7 @@ pub fn scene(
         palette: gfx.palette,
         // One color, unlike Elma's timer that stands out from what is behind it (DIGIT.CPP)
         timer_map: [gfx.timer_color; 256],
+        text_colors: text_colors(&gfx.palette),
         // Textures start at the corner of the area the game draws
         canvas_origin: origin,
         polygon_vertices: crate::scene::polygon_fans(level),
@@ -154,6 +155,24 @@ pub fn scene(
             extent,
         })),
     })
+}
+
+// Across has no info panel, so the text is drawn in the colors nearest the fonts' in Elma's
+// default LGR: the yellow of the letters and the orange of the medium font's edges
+fn text_colors(palette: &[u8; 768]) -> [u8; 256] {
+    let nearest = |rgb: [i32; 3]| {
+        (0..256)
+            .min_by_key(|&i| {
+                (0..3)
+                    .map(|c| (palette[i * 3 + c] as i32 - rgb[c]).pow(2))
+                    .sum::<i32>()
+            })
+            .unwrap_or(0) as u8
+    };
+    let mut colors = std::array::from_fn(|i| i as u8);
+    colors[25] = nearest([244, 228, 16]);
+    colors[253] = nearest([228, 128, 96]);
+    colors
 }
 
 // The sky and clouds of a view whose bottom left corner is `corner`, `size` pixels at `ppm`

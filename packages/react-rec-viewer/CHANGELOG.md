@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The last apple time, and its large font, in Across replays too. Across has none of its
+  own, so it is drawn as Elma's in the nearest colors.
 - A minimap size setting, and `minimapSize` prop, with elma-classic's sizes from 140×70 to
   420×210. Shift V steps through them.
 - A "Large font" setting, and `largeFont` prop, draws the last apple time in the game's

@@ -92,7 +92,8 @@ export interface RecViewerProps extends ReplayInput {
   minimapSize?: number;
   defaultMinimapSize?: number;
   onMinimapSizeChange?: (value: number) => void;
-  // The game's "last apple" time in the bottom right corner, on unless set. Not for Across.
+  // The game's "last apple" time in the bottom right corner, on unless set. Across has none of
+  // its own, so it is drawn as Elma's.
   lastAppleTime?: boolean;
   defaultLastAppleTime?: boolean;
   onLastAppleTimeChange?: (value: boolean) => void;

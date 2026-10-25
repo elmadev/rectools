@@ -227,12 +227,8 @@ function Settings(p: ControlsProps) {
               </select>
             </label>
           )}
-          {!p.across && (
-            <>
-              <Toggle label="Last apple time" value={p.lastAppleTime} onChange={p.onLastAppleTime} />
-              <Toggle label="Large font" value={p.largeFont} onChange={p.onLargeFont} />
-            </>
-          )}
+          <Toggle label="Last apple time" value={p.lastAppleTime} onChange={p.onLastAppleTime} />
+          <Toggle label="Large font" value={p.largeFont} onChange={p.onLargeFont} />
           {p.bikeCount > 1 && (
             <>
               <Toggle label="Zoom out to show every bike" value={p.autoZoom} onChange={p.onAutoZoom} />
