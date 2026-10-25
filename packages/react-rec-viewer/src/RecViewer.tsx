@@ -814,6 +814,26 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     return () => window.clearTimeout(idleTimer.current);
   }, [wake]);
   const controlsHidden = fullscreen && idle;
+  // In full screen the controls lie over the canvas's bottom, and the last apple time and the
+  // minimap move up out from under them
+  const controlsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!loaded) return;
+    const canvas = canvasRef.current;
+    const bar = controlsRef.current;
+    const covered = canvas && bar && fullscreen && !controlsHidden ? bar : null;
+    const update = () => {
+      const inset = covered
+        ? canvas!.getBoundingClientRect().bottom - covered.getBoundingClientRect().top
+        : 0;
+      change((v) => v.setHudBottomInset(Math.max(0, Math.round(inset * dpr()))));
+    };
+    update();
+    if (!covered) return;
+    const observer = new ResizeObserver(update);
+    observer.observe(covered);
+    return () => observer.disconnect();
+  }, [loaded, fullscreen, controlsHidden, change]);
   useEffect(() => {
     if (!wakeLock || !playing || !navigator.wakeLock) return;
     let lock: WakeLockSentinel | undefined;
@@ -907,6 +927,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
       )}
       {controls && (
         <div
+          ref={controlsRef}
           onPointerEnter={() => (overControls.current = true)}
           onPointerLeave={() => (overControls.current = false)}
           style={

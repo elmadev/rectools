@@ -108,6 +108,9 @@ pub struct RenderOptions {
     // View pixels to a game pixel for the timer's lines and the info panel's text. The game's
     // is 1, which a high density screen makes hard to see; 0 is taken as 1.
     pub hud_scale: u32,
+    // Target pixels at the bottom that something lies over, such as a player's controls. The
+    // last apple time and the minimap, in the bottom right, move up out of them.
+    pub hud_bottom_inset: u32,
 }
 
 impl Default for RenderOptions {
@@ -118,6 +121,7 @@ impl Default for RenderOptions {
             textures: TextureZoom::default(),
             zoom_textures: true,
             hud_scale: 0,
+            hud_bottom_inset: 0,
         }
     }
 }

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- In full screen, the last apple time and the minimap move up out from under the controls
+  while they are shown.
 - Objects are always still in a level shown without a replay, and the "Still objects"
   setting is gone from there. They didn't bob anyway, only went out of step.
 - Holding the scrubber pauses the replay, and letting go plays on if it was playing, so the

@@ -424,6 +424,8 @@ pub struct Viewer {
     player: Player,
     loaded: Option<Loaded>,
     last_render: Option<f64>,
+    // Device pixels at the canvas's bottom covered by the page's controls
+    hud_bottom_inset: u32,
     // The last Across pack and its graphics
     across: Option<(Vec<u8>, Arc<elma_formats::across::gfx::AcrossGraphics>)>,
 }
@@ -482,6 +484,7 @@ impl Viewer {
             player,
             loaded: None,
             last_render: None,
+            hud_bottom_inset: 0,
             across: None,
         })
     }
@@ -930,6 +933,13 @@ impl Viewer {
         self.player.set_zoom_textures(value);
     }
 
+    // Device pixels at the canvas's bottom that controls lie over: the last apple time and the
+    // minimap move up out of them
+    #[wasm_bindgen(js_name = setHudBottomInset)]
+    pub fn set_hud_bottom_inset(&mut self, pixels: u32) {
+        self.hud_bottom_inset = pixels;
+    }
+
     // Size of the canvas in device pixels, and how many of them a CSS pixel is
     pub fn resize(&mut self, width: u32, height: u32, scale: f64) {
         let (width, height) = (width.max(1), height.max(1));
@@ -984,6 +994,7 @@ impl Viewer {
         // The timer's lines and the info panel's pixels as big as a screen pixel, where recview
         // and rec2vid keep the game's
         options.hud_scale = self.player.scale().round() as u32;
+        options.hud_bottom_inset = self.hud_bottom_inset;
         let (Some(loaded), Some(session)) = (&self.loaded, self.player.session()) else {
             return;
         };

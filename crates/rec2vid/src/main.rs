@@ -429,6 +429,7 @@ fn render(
         zoom_textures: opts.zoom_textures,
         // The game's 1 pixel lines
         hud_scale: 1,
+        hud_bottom_inset: 0,
     };
 
     let fps = opts.fps as f64;

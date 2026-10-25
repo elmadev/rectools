@@ -378,6 +378,9 @@ pub fn plan(
             &mut frame.placed,
         );
 
+        // How far the view's bottom right is under what covers the target's bottom
+        let view_bottom = height.saturating_sub(params.viewport[1] + params.viewport[3]);
+        let lift = options.hud_bottom_inset.saturating_sub(view_bottom);
         let timer_start = timer_data.len() as u32;
         if let Some(timer) = params.timer {
             let rects = timer_rects(
@@ -395,7 +398,11 @@ pub fn plan(
             && !matches!(scene.look, Look::Across(_))
         {
             let rects = last_apple_rects(params.viewport[2] as i32, apples, last, hud_scale);
-            timer_data.extend(rects.iter().map(|r| HudRect::new(r.rect, r.color as u32)));
+            timer_data.extend(rects.iter().map(|r| {
+                let mut rect = HudRect::new(r.rect, r.color as u32);
+                rect.rect[1] += lift as f32;
+                rect
+            }));
         }
         // From the view's bottom left to the target's
         let [vx, vy, _, vh] = params.viewport;
@@ -430,7 +437,9 @@ pub fn plan(
                 None if params.camera == CameraMode::Centered => (rider.pose.bike_r, 0.5),
                 None => (rider.pose.bike_r, 0.2 + phase * 0.6),
             };
-            crate::minimap::place(&scene.minimap, params.viewport, anchor, fraction).map(|p| {
+            let placed =
+                crate::minimap::place(&scene.minimap, params.viewport, lift, anchor, fraction);
+            placed.map(|p| {
                 let uniform = |rect: [u32; 4], corner: Vec2| {
                     let f2 = |v: Vec2| [v.x as f32, v.y as f32];
                     ViewUniform {
@@ -811,6 +820,42 @@ mod tests {
         assert!(minimap.inner[0] > 320 && minimap.inner[1] > 240);
         assert_eq!(minimap.border[0] + 1, minimap.inner[0]);
         assert!(!minimap.icons.is_empty());
+    }
+
+    #[test]
+    fn the_minimap_moves_up_out_of_a_bottom_inset() {
+        let (scene, session) = setup(0);
+        let minimap_top = |views: &[ViewParams], inset| {
+            let mut frame = FramePlan::default();
+            let options = RenderOptions {
+                hud_bottom_inset: inset,
+                ..Default::default()
+            };
+            plan_session(&mut frame, &scene, &session, views, &options, (640, 480)).unwrap();
+            frame
+                .views
+                .iter()
+                .map(|v| v.minimap.as_ref().unwrap().inner[1])
+                .collect::<Vec<_>>()
+        };
+        let whole = [view(0, false, true)];
+        assert_eq!(minimap_top(&whole, 50)[0] + 50, minimap_top(&whole, 0)[0]);
+        // Split, only the bottom view is under it
+        let split = [
+            ViewParams {
+                viewport: [0, 0, 640, 240],
+                ..view(0, false, true)
+            },
+            ViewParams {
+                viewport: [0, 240, 640, 240],
+                ..view(0, false, true)
+            },
+        ];
+        let (lifted, not) = (minimap_top(&split, 50), minimap_top(&split, 0));
+        assert_eq!(lifted[0], not[0]);
+        assert_eq!(lifted[1] + 50, not[1]);
+        // As far as it still fits
+        assert!(minimap_top(&whole, 5000)[0] >= 1);
     }
 
     #[test]

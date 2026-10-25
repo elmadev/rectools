@@ -671,6 +671,7 @@ impl Player {
             zoom_textures: s.zoom_textures,
             // The game's pixels, which the web player makes bigger on dense screens
             hud_scale: 1,
+            hud_bottom_inset: 0,
         }
     }
 
