@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.3 - 2026-10-25
 
 - Fixed the player freezing on Pixel 10 phones when the bike reached an apple, the exit or a
   killer: their graphics driver lost the page's graphics when a bike was drawn over an object.
