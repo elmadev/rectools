@@ -748,7 +748,7 @@ impl Default for DynamicOptions {
 }
 
 // Objects and bikes of `view`: the objects that are there in it, then its bikes in order.
-// Returns where the translucent ones are in `out`.
+// Returns where the objects end in `out`, and where the translucent bikes are.
 // The objects are where the game puts them at the view's zoom, by their index in `out` in
 // `placed`.
 pub(crate) fn dynamic_instances(
@@ -758,7 +758,7 @@ pub(crate) fn dynamic_instances(
     options: &DynamicOptions,
     out: &mut Vec<Instance>,
     placed: &mut Vec<(usize, CanvasRect)>,
-) -> std::ops::Range<u32> {
+) -> (u32, std::ops::Range<u32>) {
     let time = world.time;
     let active = |i: usize, object: &LevelObject| view.object_there(i, object);
     let (sprites, elma) = match &scene.look {
@@ -772,9 +772,11 @@ pub(crate) fn dynamic_instances(
                 options.animated_objects,
                 out,
             );
-            return bike_instances(world, view, out, |bike, _, out| {
+            let objects_end = out.len() as u32;
+            let ghosts = bike_instances(world, view, out, |bike, _, out| {
                 across::draw_bike(&bike.pose, &bike.animation, &sprites.bike, out);
             });
+            return (objects_end, ghosts);
         }
     };
     let zoom = view.zoom;
@@ -867,7 +869,8 @@ pub(crate) fn dynamic_instances(
     }
 
     let shirt = |index: Option<usize>| index.and_then(|i| sprites.shirts.get(i).copied().flatten());
-    bike_instances(world, view, out, |bike, drawn, out| {
+    let objects_end = out.len() as u32;
+    let ghosts = bike_instances(world, view, out, |bike, drawn, out| {
         draw_bike(
             &BikeDraw {
                 pose: &bike.pose,
@@ -878,7 +881,8 @@ pub(crate) fn dynamic_instances(
             },
             out,
         );
-    })
+    });
+    (objects_end, ghosts)
 }
 
 // The view's bikes with `draw`, in order, returning where its translucent ones are in `out`

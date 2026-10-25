@@ -1197,6 +1197,33 @@ impl Renderer {
             }
         }
 
+        // The objects near a bike in a pass of their own, before the bikes. In one pass, a bike
+        // drawn over an object lost the WebGL2 context ("Out of memory") on a Pixel 10 Pro
+        // (PowerVR DXT-48-1536) as it took an apple or reached the exit, which a pass between
+        // them avoids. The bikes pass then draws over them as it did. Away from the bikes, the
+        // objects stay in the bikes pass, see objects_near_bikes.
+        if draws.iter().any(|d| !d.objects.is_empty()) {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("objects"),
+                timestamp_writes: timestamps("objects"),
+                color_attachments: &[
+                    color(&targets.index_view, wgpu::LoadOp::Load),
+                    // The objects write no ghost, and the bikes pass clears this layer itself
+                    color_stored(&targets.ghost_view, clear, false),
+                ],
+                ..Default::default()
+            });
+            pass.set_index_buffer(self.quad_indices.slice(..), wgpu::IndexFormat::Uint16);
+            pass.set_vertex_buffer(0, self.dynamic_buffer.slice(..));
+            pass.set_vertex_buffer(1, self.dynamic_rects.slice(..));
+            pass.set_bind_group(1, &targets.layers_group, &[]);
+            pass.set_pipeline(&self.dynamic);
+            for (i, (params, draw)) in views.iter().zip(draws).enumerate() {
+                set_view(&mut pass, i, params.viewport);
+                draw_quads(&mut pass, draw.objects.clone());
+            }
+        }
+
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("bikes"),
@@ -1218,9 +1245,9 @@ impl Renderer {
             pass.set_bind_group(1, &targets.layers_group, &[]);
             for (i, (params, draw)) in views.iter().zip(draws).enumerate() {
                 set_view(&mut pass, i, params.viewport);
-                // Objects, then ghosts, then the replay's own bikes
+                // After the objects, ghosts, then the replay's own bikes
                 pass.set_pipeline(&self.dynamic);
-                draw_quads(&mut pass, draw.dynamic.start..draw.ghosts.start);
+                draw_quads(&mut pass, draw.objects.end..draw.ghosts.start);
                 pass.set_pipeline(ghost);
                 draw_quads(&mut pass, draw.ghosts.clone());
                 pass.set_pipeline(&self.dynamic);

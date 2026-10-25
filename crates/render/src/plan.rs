@@ -73,13 +73,53 @@ impl HudRect {
     }
 }
 
+// Within how many pixels of a bike the objects get a pass of their own: two of the GPU's tiles,
+// as a tiled GPU would put them in the same ones
+const OBJECT_PASS_MARGIN: f32 = 64.0;
+
+// Where `instance` reaches in the world, as its left, bottom, right and top
+fn reach(instance: &Instance) -> [f32; 4] {
+    let ([x, y], [ux, uy], [vx, vy]) = (instance.origin, instance.axis_u, instance.axis_v);
+    let xs = [x, x + ux, x + vx, x + ux + vx];
+    let ys = [y, y + uy, y + vy, y + uy + vy];
+    let min = |v: [f32; 4]| v.into_iter().fold(f32::INFINITY, f32::min);
+    let max = |v: [f32; 4]| v.into_iter().fold(f32::NEG_INFINITY, f32::max);
+    [min(xs), min(ys), max(xs), max(ys)]
+}
+
+// Whether any of `objects` comes within `margin` meters of the bikes. Drawn in one pass, a bike
+// over an object lost the WebGL2 context on a Pixel 10 Pro (PowerVR), so then the objects get a
+// pass of their own, which costs a pass the rest of the time.
+fn objects_near_bikes(objects: &[Instance], bikes: &[Instance], margin: f32) -> bool {
+    let Some(b) = bikes.iter().map(reach).reduce(|a, r| {
+        [
+            a[0].min(r[0]),
+            a[1].min(r[1]),
+            a[2].max(r[2]),
+            a[3].max(r[3]),
+        ]
+    }) else {
+        return false;
+    };
+    objects.iter().map(reach).any(|o| {
+        o[0] <= b[2] + margin
+            && o[2] >= b[0] - margin
+            && o[1] <= b[3] + margin
+            && o[3] >= b[1] - margin
+    })
+}
+
 // What one view draws, as ranges of the per-frame buffers
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ViewDraw {
     // What covers the ground and the sky
     pub(crate) ground_fill: Range<u32>,
     pub(crate) sky_fill: Range<u32>,
+    // The objects, then the bikes, with the translucent ones in `ghosts`
     pub(crate) dynamic: Range<u32>,
+    // The objects when they get a pass of their own, before the bikes, see objects_near_bikes.
+    // Otherwise empty, at the start of `dynamic`, and the bikes pass draws them.
+    pub(crate) objects: Range<u32>,
     pub(crate) ghosts: Range<u32>,
     pub(crate) timer: Range<u32>,
     pub(crate) minimap: Option<MinimapDraw>,
@@ -329,7 +369,7 @@ pub fn plan(
             ),
         }
         let dynamic_start = scratch.len() as u32;
-        let ghosts = dynamic_instances(
+        let (objects_end, ghosts) = dynamic_instances(
             scene,
             world,
             params,
@@ -364,6 +404,13 @@ pub fn plan(
             r.rect[1] += height.saturating_sub(vy + vh) as f32;
         }
         let dynamic_end = scratch.len() as u32;
+        let (start, end) = (dynamic_start as usize, objects_end as usize);
+        let near = objects_near_bikes(
+            &scratch[start..end],
+            &scratch[end..dynamic_end as usize],
+            OBJECT_PASS_MARGIN / u.pixels_per_meter,
+        );
+        let objects = dynamic_start..if near { objects_end } else { dynamic_start };
         let minimap = if params.minimap {
             // Without a bike to follow, as if at the level's origin facing left
             let rider = params.followed(world).copied().unwrap_or_default();
@@ -430,6 +477,7 @@ pub fn plan(
             ground_fill: ground_start..sky_start,
             sky_fill: sky_start..dynamic_start,
             dynamic: dynamic_start..dynamic_end,
+            objects,
             ghosts,
             timer: timer_start..timer_data.len() as u32,
         });
@@ -654,6 +702,42 @@ mod tests {
     }
 
     #[test]
+    fn objects_near_a_bike_get_a_pass_of_their_own() {
+        let (scene, mut session) = setup(1);
+        let draw =
+            |session: &Session| planned(&scene, session, &[view(0, false, false)]).views[0].clone();
+        // The bike is at the start, 15 m from the apple
+        let far = draw(&session);
+        assert!(far.objects.is_empty());
+        assert_eq!(far.objects.start, far.dynamic.start);
+        let kind = |k| session.objects.iter().position(|o| o.kind == k).unwrap();
+        let (food, start) = (kind(ObjectType::Food), kind(ObjectType::Start));
+        session.objects[food].r = session.objects[start].r;
+        // The apple and the exit, then the ghost and the bike
+        let near = draw(&session);
+        assert_eq!(near.objects, near.dynamic.start..near.dynamic.start + 2);
+        assert_eq!(near.ghosts.start, near.objects.end);
+        assert!(!near.ghosts.is_empty() && near.ghosts.end < near.dynamic.end);
+    }
+
+    #[test]
+    fn a_stretched_bike_reaches_objects_far_from_its_wheels_and_head() {
+        let quad = |origin: [f64; 2], u: [f64; 2], v: [f64; 2]| Instance::new(origin, u, v);
+        // Wheels and a head near the origin, and the suspension stretched 20 m to the right
+        let bike = [
+            quad([-0.4, 0.4], [0.8, 0.0], [0.0, -0.8]),
+            quad([0.0, 1.5], [0.6, 0.0], [0.0, -0.6]),
+            quad([0.0, 0.05], [20.0, 0.0], [0.0, -0.1]),
+        ];
+        let apple = |x: f64, y: f64| [quad([x - 0.4, y + 0.4], [0.8, 0.0], [0.0, -0.8])];
+        // An apple under the far end of the suspension, and one well clear of all of it
+        assert!(objects_near_bikes(&apple(19.5, 0.0), &bike, 0.5));
+        assert!(!objects_near_bikes(&apple(10.0, 6.0), &bike, 0.5));
+        // Within the margin of its end
+        assert!(objects_near_bikes(&apple(20.6, 0.0), &bike, 0.5));
+    }
+
+    #[test]
     fn the_frame_behind_the_views_is_drawn_where_they_leave_gaps() {
         let (scene, session) = setup(0);
         let mut left = view(0, false, false);
@@ -843,6 +927,8 @@ mod tests {
         let draw = &frame.views[0];
         // The apple and the exit
         assert_eq!(draw.dynamic.len(), 2);
+        // Near no bike, so they need no pass of their own
+        assert!(draw.objects.is_empty());
         assert!(draw.ghosts.is_empty());
         assert!(!draw.timer.is_empty());
         assert!(draw.minimap.is_some());
