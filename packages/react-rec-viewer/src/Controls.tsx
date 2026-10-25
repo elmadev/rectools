@@ -22,7 +22,8 @@ export interface ControlsProps {
   // Written by the render loop, so playing never re-renders React
   timeRef: RefObject<HTMLSpanElement>;
   scrubRef: RefObject<HTMLInputElement>;
-  scrubbing: MutableRefObject<boolean>;
+  // A press on the scrubber begins or ends
+  onScrub(held: boolean): void;
   // Whether the settings are open, for the view: the press that closes them doesn't play or pause
   settingsOpen: MutableRefObject<boolean>;
   onTogglePlay(): void;
@@ -357,9 +358,14 @@ export function Controls(p: ControlsProps) {
           defaultValue={0}
           disabled={disabled}
           aria-label="Position"
-          onPointerDown={() => (p.scrubbing.current = true)}
-          onPointerUp={() => (p.scrubbing.current = false)}
-          onPointerCancel={() => (p.scrubbing.current = false)}
+          onPointerDown={(e) => {
+            // Held, the release comes here even off the scrubber
+            e.currentTarget.setPointerCapture(e.pointerId);
+            p.onScrub(true);
+          }}
+          onPointerUp={() => p.onScrub(false)}
+          onPointerCancel={() => p.onScrub(false)}
+          onLostPointerCapture={() => p.onScrub(false)}
           onInput={(e) => p.onSeek(Number(e.currentTarget.value))}
           style={{ width: "100%", margin: "4px 0", touchAction: "none", accentColor: "#0075ff" }}
         />

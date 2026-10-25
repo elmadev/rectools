@@ -476,6 +476,23 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
   const recenter = useCallback(() => act("Recenter"), [act]);
   const seek = useCallback((seconds: number) => change((v) => v.seek(seconds)), [change]);
   const setPlaying = useCallback((value: boolean) => change((v) => v.setPlaying(value)), [change]);
+  // Playing stops while the scrubber is held, so the bike stays where it is put, and goes on
+  // once it is let go
+  const resumeAfterScrub = useRef(false);
+  const scrub = useCallback(
+    (held: boolean) => {
+      if (held === scrubbing.current) return;
+      scrubbing.current = held;
+      if (held) {
+        resumeAfterScrub.current = stateRef.current?.playing ?? false;
+        if (resumeAfterScrub.current) setPlaying(false);
+      } else if (resumeAfterScrub.current) {
+        resumeAfterScrub.current = false;
+        setPlaying(true);
+      }
+    },
+    [setPlaying],
+  );
 
   // The last error, and whether something is still shown under it
   const [error, setError] = useState<{ error: RecViewerError; shown: boolean } | null>(null);
@@ -928,7 +945,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
             viewRef={containerRef}
             timeRef={timeRef}
             scrubRef={scrubRef}
-            scrubbing={scrubbing}
+            onScrub={scrub}
             settingsOpen={settingsOpen}
             onTogglePlay={togglePlay}
             onSeek={seek}
