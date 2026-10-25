@@ -100,6 +100,10 @@ export interface RecViewerProps extends ReplayInput {
   zoomTextures?: boolean;
   defaultZoomTextures?: boolean;
   onZoomTexturesChange?: (value: boolean) => void;
+  // The last apple time in the game's medium font, like elma-classic's "Large Font"
+  largeFont?: boolean;
+  defaultLargeFont?: boolean;
+  onLargeFontChange?: (value: boolean) => void;
   // Draw ghosts blue and see-through
   translucentGhosts?: boolean;
   defaultTranslucentGhosts?: boolean;
@@ -230,6 +234,7 @@ interface State {
   translucentGhosts: boolean;
   picturesInBackground: boolean;
   zoomTextures: boolean;
+  largeFont: boolean;
   levelOptions: Required<LevelOptions>;
 }
 
@@ -254,6 +259,7 @@ function readState(viewer: Viewer): State {
     translucentGhosts: s.translucentGhosts,
     picturesInBackground: s.picturesInBackground,
     zoomTextures: s.zoomTextures,
+    largeFont: s.largeFont,
     levelOptions: {
       grass: s.grass,
       pictures: s.pictures,
@@ -281,7 +287,8 @@ type Setting =
   | "autoZoom"
   | "translucentGhosts"
   | "picturesInBackground"
-  | "zoomTextures";
+  | "zoomTextures"
+  | "largeFont";
 
 const APPLY: { [K in Setting]: (viewer: Viewer, value: State[K]) => void } = {
   playing: (v, x) => v.setPlaying(x),
@@ -296,6 +303,7 @@ const APPLY: { [K in Setting]: (viewer: Viewer, value: State[K]) => void } = {
   translucentGhosts: (v, x) => v.setTranslucentGhosts(x),
   picturesInBackground: (v, x) => v.setPicturesInBackground(x),
   zoomTextures: (v, x) => v.setZoomTextures(x),
+  largeFont: (v, x) => v.setLargeFont(x),
 };
 
 const applyLevelOptions = (viewer: Viewer, o: Required<LevelOptions>) => viewer.setLevelOptions(o);
@@ -368,6 +376,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     translucentGhosts: props.translucentGhosts,
     picturesInBackground: props.picturesInBackground,
     zoomTextures: props.zoomTextures,
+    largeFont: props.largeFont,
   };
   // What each starts as when the props don't give it
   const defaults: { [K in Setting]: State[K] } = {
@@ -383,6 +392,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     translucentGhosts: props.defaultTranslucentGhosts ?? false,
     picturesInBackground: props.defaultPicturesInBackground ?? true,
     zoomTextures: props.defaultZoomTextures ?? true,
+    largeFont: props.defaultLargeFont ?? false,
   };
   // Who hears about a change of each
   const changed = {
@@ -398,6 +408,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     translucentGhosts: props.onTranslucentGhostsChange,
     picturesInBackground: props.onPicturesInBackgroundChange,
     zoomTextures: props.onZoomTexturesChange,
+    largeFont: props.onLargeFontChange,
     levelOptions: props.onLevelOptionsChange,
   } as { [K in Setting | "levelOptions"]?: (value: State[K]) => void };
   // A page's `ghosts={[...]}` is a new array each render, which would load the replay again
@@ -996,6 +1007,8 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
             onPicturesInBackground={(x) => change((v) => v.setPicturesInBackground(x))}
             zoomTextures={s?.zoomTextures ?? true}
             onZoomTextures={(x) => change((v) => v.setZoomTextures(x))}
+            largeFont={s?.largeFont ?? false}
+            onLargeFont={(x) => change((v) => v.setLargeFont(x))}
             autoZoom={s?.autoZoom ?? false}
             onAutoZoom={(x) => change((v) => v.setAutoZoom(x))}
             translucentGhosts={s?.translucentGhosts ?? false}

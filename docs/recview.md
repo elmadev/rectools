@@ -73,6 +73,7 @@ And recview's own:
 | B | Ghosts blue and see-through |
 | Z | Auto zoom, to keep every bike in view |
 | Y | Zoom textures: the ground, sky and qgrass grow with the zoom, or keep their size at zoom 1 |
+| I | Last apple time in the large font |
 | M | Sound |
 | L | Loop |
 | O | Open replays or a level |

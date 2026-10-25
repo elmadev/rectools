@@ -48,6 +48,8 @@ export interface ControlsProps {
   onPicturesInBackground(value: boolean): void;
   zoomTextures: boolean;
   onZoomTextures(value: boolean): void;
+  largeFont: boolean;
+  onLargeFont(value: boolean): void;
   autoZoom: boolean;
   onAutoZoom(value: boolean): void;
   translucentGhosts: boolean;
@@ -197,7 +199,12 @@ function Settings(p: ControlsProps) {
           <Toggle label="Centered camera" value={p.centeredCamera} onChange={p.onCenteredCamera} />
           <Toggle label="Timer" value={p.timer} onChange={p.onTimer} />
           <Toggle label="Minimap" value={p.minimap} onChange={p.onMinimap} />
-          {!p.across && <Toggle label="Last apple time" value={p.lastAppleTime} onChange={p.onLastAppleTime} />}
+          {!p.across && (
+            <>
+              <Toggle label="Last apple time" value={p.lastAppleTime} onChange={p.onLastAppleTime} />
+              <Toggle label="Large font" value={p.largeFont} onChange={p.onLargeFont} />
+            </>
+          )}
           {p.bikeCount > 1 && (
             <>
               <Toggle label="Zoom out to show every bike" value={p.autoZoom} onChange={p.onAutoZoom} />

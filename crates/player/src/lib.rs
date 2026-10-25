@@ -79,6 +79,8 @@ pub struct Settings {
     // The ground, sky and qgrass textures grow with the zoom, like the pictures; otherwise
     // they keep their size at zoom 1, as elma-classic's "Zoom Textures" off
     pub zoom_textures: bool,
+    // The last apple time in the game's medium font, as elma-classic's "Large Font"
+    pub large_font: bool,
     // Start over after the end
     pub looping: bool,
     pub level: LevelOptions,
@@ -97,6 +99,7 @@ impl Default for Settings {
             translucent_ghosts: false,
             pictures_in_background: true,
             zoom_textures: true,
+            large_font: false,
             looping: true,
             level: LevelOptions::default(),
         }
@@ -603,6 +606,10 @@ impl Player {
         self.settings.zoom_textures = value;
     }
 
+    pub fn set_large_font(&mut self, value: bool) {
+        self.settings.large_font = value;
+    }
+
     pub fn set_looping(&mut self, looping: bool) {
         self.settings.looping = looping;
     }
@@ -671,6 +678,7 @@ impl Player {
             zoom_textures: s.zoom_textures,
             // The game's pixels, which the web player makes bigger on dense screens
             hud_scale: 1,
+            large_font: s.large_font,
             hud_bottom_inset: 0,
         }
     }

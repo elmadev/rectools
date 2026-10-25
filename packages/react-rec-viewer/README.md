@@ -64,6 +64,7 @@ Settings with a `default…` and an `on…Change` can be controlled or left to t
 | `timer` | true | |
 | `minimap` | false | |
 | `lastAppleTime` | true | The game's "last apple" time in the bottom right (not for Across) |
+| `largeFont` | false | The last apple time in the game's medium font, like elma-classic's "Large Font" (not for Across) |
 | `autoZoom` | false | Zoom out to keep every bike in view. Moving the camera pauses it. |
 | `translucentGhosts` | false | Merged replays blue and see-through (not on WebGL2) |
 | `picturesInBackground` | true | Bikes and objects over every picture |

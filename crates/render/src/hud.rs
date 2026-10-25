@@ -208,11 +208,17 @@ pub(crate) fn last_apple_rects(
     apples: i32,
     last_centiseconds: i64,
     scale: i32,
+    large_font: bool,
 ) -> Vec<TextRect> {
-    let font = Font::small();
+    // elma-classic's render_info_panel
+    let (font, label_offset, per_char) = if large_font {
+        (Font::medium(), 280, 12)
+    } else {
+        (Font::small(), 180, 6)
+    };
     let width = view_width / scale;
     let value = compact_time(last_centiseconds);
-    let label_offset = 180 + (value.len() as i32 - 10).max(0) * 6;
+    let label_offset = label_offset + (value.len() as i32 - 10).max(0) * per_char;
     let y = 10;
     let mut out = Vec::new();
     let label = format!("last apple ({apples})");
@@ -236,7 +242,7 @@ mod tests {
 
     #[test]
     fn the_last_apple_row_sits_bottom_right() {
-        let rects = last_apple_rects(640, 3, 2297, 1);
+        let rects = last_apple_rects(640, 3, 2297, 1, false);
         assert!(!rects.is_empty());
         assert!(rects.iter().all(|r| r.color == 25));
         let left = rects.iter().map(|r| r.rect.x).min().unwrap();
@@ -246,9 +252,30 @@ mod tests {
         assert!((640 - 14..=640 - 10 - 1).contains(&right), "{right}");
         assert!(rects.iter().all(|r| r.rect.y >= 10 && r.rect.y < 10 + 14));
         // Twice the scale is the same row on twice the pixels
-        let big = last_apple_rects(1280, 3, 2297, 2);
+        let big = last_apple_rects(1280, 3, 2297, 2, false);
         assert_eq!(big.len(), rects.len());
         assert_eq!(big[0].rect.x, 2 * rects[0].rect.x);
+    }
+
+    #[test]
+    fn the_large_font_row_is_further_from_the_edge_and_taller() {
+        let small = last_apple_rects(640, 3, 2297, 1, false);
+        let large = last_apple_rects(640, 3, 2297, 1, true);
+        let left = |rects: &[TextRect]| rects.iter().map(|r| r.rect.x).min().unwrap();
+        let top = |rects: &[TextRect]| {
+            rects
+                .iter()
+                .map(|r| r.rect.y + r.rect.height)
+                .max()
+                .unwrap()
+        };
+        // Glyphs can start with an empty column
+        assert!(
+            (640 - 280..640 - 277).contains(&left(&large)),
+            "{}",
+            left(&large)
+        );
+        assert!(top(&large) > top(&small));
     }
 
     #[test]

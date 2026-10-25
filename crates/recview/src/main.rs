@@ -73,6 +73,7 @@ Keys only recview has:
   Z                   auto zoom: zoom out to keep every ghost in view
   Y                   zoom textures: the ground, sky and qgrass grow with the zoom, or
                       keep their size at zoom 1
+  I                   last apple time in the large font
   M                   sound on / off
   L                   loop on / off
   O                   open replays or a level
@@ -191,7 +192,7 @@ type Flag = fn(&mut Prefs) -> &mut bool;
 
 impl Prefs {
     // The on/off settings by their key in the file
-    const FLAGS: [(&str, Flag); 18] = [
+    const FLAGS: [(&str, Flag); 19] = [
         ("centered_camera", |p| &mut p.settings.centered_camera),
         ("split_screen", |p| &mut p.settings.split_screen),
         ("timer", |p| &mut p.settings.timer),
@@ -205,6 +206,7 @@ impl Prefs {
             &mut p.settings.pictures_in_background
         }),
         ("zoom_textures", |p| &mut p.settings.zoom_textures),
+        ("large_font", |p| &mut p.settings.large_font),
         ("grass", |p| &mut p.settings.level.grass),
         ("pictures", |p| &mut p.settings.level.pictures),
         ("custom_sky", |p| &mut p.settings.level.custom_sky),
@@ -1042,6 +1044,7 @@ impl App {
             "b" => p.set_translucent_ghosts(!s.translucent_ghosts),
             "z" => p.set_auto_zoom(!s.auto_zoom),
             "y" => p.set_zoom_textures(!s.zoom_textures),
+            "i" => p.set_large_font(!s.large_font),
             "l" => p.set_looping(!s.looping),
             "m" => {
                 self.muted = !self.muted;

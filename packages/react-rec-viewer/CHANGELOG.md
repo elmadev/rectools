@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- A "Large font" setting, and `largeFont` prop, draws the last apple time in the game's
+  medium font, like elma-classic's "Large Font".
 - In full screen, the last apple time and the minimap move up out from under the controls
   while they are shown.
 - Objects are always still in a level shown without a replay, and the "Still objects"

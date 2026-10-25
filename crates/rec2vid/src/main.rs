@@ -429,6 +429,7 @@ fn render(
         zoom_textures: opts.zoom_textures,
         // The game's 1 pixel lines
         hud_scale: 1,
+        large_font: false,
         hud_bottom_inset: 0,
     };
 

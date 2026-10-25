@@ -401,6 +401,8 @@ pub struct ViewerState {
     pub pictures_in_background: bool,
     #[wasm_bindgen(js_name = zoomTextures)]
     pub zoom_textures: bool,
+    #[wasm_bindgen(js_name = largeFont)]
+    pub large_font: bool,
     pub grass: bool,
     pub pictures: bool,
     #[wasm_bindgen(js_name = customSky)]
@@ -721,6 +723,7 @@ impl Viewer {
             translucent_ghosts: s.translucent_ghosts,
             pictures_in_background: s.pictures_in_background,
             zoom_textures: s.zoom_textures,
+            large_font: s.large_font,
             grass: s.level.grass,
             pictures: s.level.pictures,
             custom_sky: s.level.custom_sky,
@@ -931,6 +934,12 @@ impl Viewer {
     #[wasm_bindgen(js_name = setZoomTextures)]
     pub fn set_zoom_textures(&mut self, value: bool) {
         self.player.set_zoom_textures(value);
+    }
+
+    // The last apple time in the game's medium font, as elma-classic's "Large Font"
+    #[wasm_bindgen(js_name = setLargeFont)]
+    pub fn set_large_font(&mut self, value: bool) {
+        self.player.set_large_font(value);
     }
 
     // Device pixels at the canvas's bottom that controls lie over: the last apple time and the

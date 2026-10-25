@@ -397,7 +397,13 @@ pub fn plan(
         if let Some((apples, last)) = params.last_apple
             && !matches!(scene.look, Look::Across(_))
         {
-            let rects = last_apple_rects(params.viewport[2] as i32, apples, last, hud_scale);
+            let rects = last_apple_rects(
+                params.viewport[2] as i32,
+                apples,
+                last,
+                hud_scale,
+                options.large_font,
+            );
             timer_data.extend(rects.iter().map(|r| {
                 let mut rect = HudRect::new(r.rect, r.color as u32);
                 rect.rect[1] += lift as f32;
