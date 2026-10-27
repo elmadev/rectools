@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-10-27
 
 - Across replays can now also show the last apple time.
 - Added a minimap size setting and `minimapSize` prop.
