@@ -2,80 +2,56 @@
 
 ## Unreleased
 
-- The last apple time, and its large font, in Across replays too. Across has none of its
-  own, so it is drawn as Elma's in the nearest colors.
-- A minimap size setting, and `minimapSize` prop, with elma-classic's sizes from 140×70 to
-  420×210. Shift V steps through them.
-- A "Large font" setting, and `largeFont` prop, draws the last apple time in the game's
-  medium font, like elma-classic's "Large Font".
-- In full screen, the last apple time and the minimap move up out from under the controls
-  while they are shown.
-- Objects are always still in a level shown without a replay, and the "Still objects"
-  setting is gone from there. They didn't bob anyway, only went out of step.
-- Holding the scrubber pauses the replay, and letting go plays on if it was playing, so the
-  bike stays where it's put while seeking.
+- Across replays can now also show the last apple time.
+- Added a minimap size setting and `minimapSize` prop.
+- Added a "Large font" setting and `largeFont` prop for the last apple time.
+- In full screen, the last apple time and minimap no longer hide under the controls.
+- The "Still objects" setting is hidden for levels shown without a replay.
+- Holding the scrubber now pauses the replay.
 
 ## 0.3.3 - 2026-10-25
 
-- Fixed the player freezing on Pixel 10 phones when the bike reached an apple, the exit or a
-  killer: their graphics driver lost the page's graphics when a bike was drawn over an object.
+- Fixed the player freezing on Pixel 10 phones.
 
 ## 0.3.2 - 2026-10-20
 
-- The engine is built from this release's code. 0.3.1's had two unfinished changes in it by
-  mistake, which draw the same and cost nothing, so nothing changes in use.
+- Rebuilt the engine, which in 0.3.1 had unfinished changes in it.
 
 ## 0.3.1 - 2026-10-20
 
-- Pictures and grass can't come out as stripes on phones whose GPU passes only 16 bits of
-  each number between shader stages, such as some with Adreno. 0.3.0 had them at risk again.
+- Fixed pictures and grass showing as stripes on some phones.
 
 ## 0.3.0 - 2026-10-19
 
 - No more "Draw with an instance count of 0" warnings in the console.
-- Playing takes a little less work each frame: the time shown is changed in place.
-- Replays added to the end of `ghosts` are merged into the replay playing, from the same
-  moment with the same view, without loading it again.
-- Following a ghost, the minimap shows the apples it has taken, where it showed the main
-  replay's.
+- Slightly less work each frame while playing.
+- Replays added to the end of `ghosts` join without reloading the replay.
+- Following a ghost, the minimap shows the apples it has taken.
 - The ground and sky take less of the GPU to draw.
-- Levels with a lot of grass, or many pictures, take much less to draw: only what is in view
-  is drawn.
-- A level's LGR starts downloading as soon as the level is in, rather than once the engine has
-  loaded.
-- `RecPlayer` loads the engine and readies the GPU while it downloads the replay and level,
-  rather than after.
-- Browsers with WebGPU download a fifth of the engine: 0.55 MB rather than 2.9 MB (216 KB
-  gzipped, from 1.13 MB). The package has a second build, with WebGL2, for the others.
-- `preload` starts the downloads and the engine for a `RecPlayer` that isn't shown yet, such as
-  while a page waits for its own data.
-- Shirts, and an Elma level's LGR, start downloading with the replays and the level, rather
-  than once the replays have arrived and the engine has read them.
+- Levels with lots of grass or pictures draw much faster.
+- Smaller download with WebGPU: 0.55 MB instead of 2.9 MB.
+- `RecPlayer` loads the engine while it downloads the replay and level.
+- Added `preload` to start loading a `RecPlayer` before it is shown.
+- Shirts and the LGR start downloading sooner.
 
 ## 0.2.1 - 2026-10-17
 
-- Fixed a black screen in Firefox on Linux, which 0.2.0 brought: its WebGL2 has too few
-  vertex attributes for the shader.
+- Fixed a black screen in Firefox on Linux.
 
 ## 0.2.0 - 2026-10-17
 
-- The position slider spans the whole player, above the buttons.
-- Grass and ground no longer shimmer with auto zoom on, and stay in place while zooming.
-- Each frame takes less work to draw, and a paused player does nothing until something
-  changes.
-- `zoomTextures`, and a setting for it: off keeps the ground, sky and grass textures at their
-  size at zoom 1, like elma-classic's "Zoom Textures" off.
-- Pictures and objects are drawn as the game draws them at any zoom, where they were a pixel
-  or so off at zooms that aren't whole numbers.
-- Frames take less of the GPU to draw, most on high-resolution screens and when zoomed.
-- Replays and levels open faster, and so do changes to the grass, pictures, sky and fancyboost.
-- `ghosts` given as a new array of the same replays, as `ghosts={[...]}` does on every render,
-  no longer loads the replay again.
+- The position slider spans the whole player.
+- Grass and ground no longer shimmer or move while zooming.
+- Faster drawing, most of all on high-resolution screens and when zoomed.
+- A paused player does no work until something changes.
+- Added a "Zoom textures" setting and `zoomTextures` prop.
+- Pictures and objects are drawn like the game at any zoom.
+- Replays, levels and setting changes load faster.
+- A new `ghosts` array with the same replays no longer reloads the replay.
 
 ## 0.1.8 - 2026-10-14
 
-- Grass and ground no longer shimmer when the camera moves on a scaled screen or when
-  zoomed.
+- Grass and ground no longer shimmer on scaled screens or when zoomed.
 - The bike faces left at the start, like in the game.
 - Fixed drawing errors on some phones.
 - The sky is drawn more accurately when zoomed.
