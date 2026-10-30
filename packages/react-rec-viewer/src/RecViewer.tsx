@@ -133,6 +133,9 @@ export interface RecViewerProps extends ReplayInput {
   onLevelOptionsChange?: (options: Required<LevelOptions>) => void;
   // Built-in play button, scrubber, speed, zoom and full screen
   controls?: boolean;
+  // A level without a replay is coming, so the controls are a level's while nothing is shown
+  // yet instead of a replay's
+  levelOnly?: boolean;
   // Keyboard shortcuts while the player has focus, see KEYS
   keyboard?: boolean;
   // Start again when the replay ends (default: true)
@@ -369,6 +372,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     levelOptions,
     controls = true,
     keyboard = true,
+    levelOnly: levelOnlyComing,
     loop = true,
     pauseWhenHidden = true,
     wakeLock = true,
@@ -976,7 +980,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
           }
         >
           <Controls
-            levelOnly={s?.levelOnly ?? false}
+            levelOnly={s?.hasContent ? s.levelOnly : (levelOnlyComing ?? (!!lev && !rec))}
             multiplayer={s?.multiplayer ?? false}
             across={s?.across ?? false}
             loaded={loaded}

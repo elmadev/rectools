@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Level pages no longer briefly show the replay controls.
 - The follow menu of a two player replay has Split screen, and keys 1 and 2 switch between it and one rider's view.
 - Zooming with the wheel back from the smallest or largest zoom reaches 1x again.
 

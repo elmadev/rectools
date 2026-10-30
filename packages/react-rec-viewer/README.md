@@ -51,6 +51,8 @@ preload({ levUrl: "https://api.elma.online/dl/level/123" });
 
 `RecViewer` takes the files as `Uint8Array`s: `rec`, `lev`, `lgr`, `res` (`elma.res`, for
 the internal levels), `acrossPack`, `shirt`, and `ghosts: { rec, shirt }[]`.
+While they download, `levelOnly` says no replay is coming, so the controls are a level's from
+the start.
 
 Settings with a `default…` and an `on…Change` can be controlled or left to the player.
 

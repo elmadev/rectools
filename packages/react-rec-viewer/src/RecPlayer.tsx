@@ -5,7 +5,7 @@ import { ELMA_ONLINE_DEFAULT_LGR, ELMA_ONLINE_LGR, loadSources } from "./loaders
 import { RecViewer, RecViewerHandle, RecViewerProps } from "./RecViewer.js";
 
 export interface RecPlayerProps
-  extends Omit<RecViewerProps, "rec" | "lgr" | "lev" | "res" | "shirt" | "ghosts"> {
+  extends Omit<RecViewerProps, "rec" | "lgr" | "lev" | "res" | "shirt" | "ghosts" | "levelOnly"> {
   // Replays to play together, the first is the main one. Leave out to show the level alone.
   recUrls?: string[];
   // Not needed for Across replays of its built-in levels
@@ -192,6 +192,7 @@ export const RecPlayer = forwardRef<RecViewerHandle, RecPlayerProps>(function Re
           bikeLabels={bikeLabels(recUrls ?? [], recNames, bikesPerRec)}
           {...viewerProps}
           {...input}
+          levelOnly={!recUrls?.length}
           onError={reportError}
           style={{ flex: 1, minHeight: 0 }}
         />
