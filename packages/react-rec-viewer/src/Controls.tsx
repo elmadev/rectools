@@ -5,6 +5,8 @@ import type { LevelOptions, LgrChoice } from "./RecViewer.js";
 
 export interface ControlsProps {
   levelOnly: boolean;
+  // Two riders, not merged replays
+  multiplayer: boolean;
   // Drawn with Across's graphics: the LGR, grass, pictures and gravity arrows don't apply
   across: boolean;
   loaded: boolean;
@@ -14,6 +16,9 @@ export interface ControlsProps {
   duration: number;
   bikeCount: number;
   follow: number;
+  // A two player replay can show both riders' views, which the follow menu offers first
+  splitScreen: boolean;
+  bothViews: boolean;
   // With the finish times
   bikeLabels: string[];
   fullscreen: boolean;
@@ -35,6 +40,7 @@ export interface ControlsProps {
   onZoomIn(): void;
   onFitLevel(): void;
   onFollow(bike: number): void;
+  onBothViews(): void;
   onFullscreen(): void;
   centeredCamera: boolean;
   onCenteredCamera(value: boolean): void;
@@ -321,7 +327,9 @@ function Settings(p: ControlsProps) {
       <table style={{ borderSpacing: "8px 2px", margin: "0 -8px", fontSize: 12 }}>
         <tbody>
           {keyList()
-            .filter((k) => (!p.levelOnly || k.level) && !(p.across && k.elmaOnly))
+            .filter(
+              (k) => (!p.levelOnly || k.level) && !(p.across && k.elmaOnly) && (p.multiplayer || !k.multiplayer),
+            )
             .map((k) => (
               <tr key={k.keys}>
                 <td style={{ whiteSpace: "nowrap", color: "#bbb" }}>{k.keys}</td>
@@ -429,10 +437,11 @@ export function Controls(p: ControlsProps) {
           <select
             aria-label="Follow"
             title="Follow"
-            value={p.follow}
-            onChange={(e) => p.onFollow(Number(e.target.value))}
+            value={p.splitScreen && p.bothViews ? "split" : p.follow}
+            onChange={(e) => (e.target.value === "split" ? p.onBothViews() : p.onFollow(Number(e.target.value)))}
             style={{ ...buttonStyle, maxWidth: 220 }}
           >
+            {p.splitScreen && <option value="split">Split screen</option>}
             {Array.from({ length: p.bikeCount }, (_, i) => (
               <option key={i} value={i}>
                 {p.bikeLabels[i]}

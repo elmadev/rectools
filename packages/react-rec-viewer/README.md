@@ -109,6 +109,7 @@ full screen.
 | F | Show the whole level |
 | C | Back onto the bike |
 | N / Shift N | Follow the next / previous bike |
+| 1 / 2 | Show / hide the first / second rider's view, in a two player replay |
 | P | Pictures and the level's own ground and sky |
 | G | Grass |
 | A | Gravity arrows |

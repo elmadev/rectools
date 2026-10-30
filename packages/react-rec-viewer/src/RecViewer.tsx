@@ -224,6 +224,7 @@ const fullStyle: CSSProperties = {
 interface State {
   hasContent: boolean;
   levelOnly: boolean;
+  multiplayer: boolean;
   across: boolean;
   duration: number;
   bikeCount: number;
@@ -232,6 +233,7 @@ interface State {
   speed: number;
   zoom: number;
   follow: number;
+  bothViews: boolean;
   centeredCamera: boolean;
   timer: boolean;
   minimap: boolean;
@@ -250,6 +252,7 @@ function readState(viewer: Viewer): State {
   const state: State = {
     hasContent: s.hasContent,
     levelOnly: s.levelOnly,
+    multiplayer: s.multiplayer,
     across: s.across,
     duration: s.duration,
     bikeCount: s.bikeCount,
@@ -258,6 +261,7 @@ function readState(viewer: Viewer): State {
     speed: s.speed,
     zoom: s.zoom,
     follow: s.follow,
+    bothViews: s.bothViews,
     centeredCamera: s.centeredCamera,
     timer: s.timer,
     minimap: s.minimap,
@@ -973,6 +977,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
         >
           <Controls
             levelOnly={s?.levelOnly ?? false}
+            multiplayer={s?.multiplayer ?? false}
             across={s?.across ?? false}
             loaded={loaded}
             playing={playing}
@@ -981,6 +986,8 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
             duration={s?.duration ?? 0}
             bikeCount={bikeCount}
             follow={s?.follow ?? 0}
+            splitScreen={splitScreen && (s?.multiplayer ?? false)}
+            bothViews={s?.bothViews ?? false}
             bikeLabels={Array.from({ length: bikeCount }, (_, i) => {
               const name = bikeLabels?.[i] || `Bike ${i + 1}`;
               const finish = finishTimes[i];
@@ -1000,10 +1007,17 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
             onZoomOut={() => act("ZoomOut")}
             onZoomIn={() => act("ZoomIn")}
             onFitLevel={fitLevel}
-            // Choosing whom to follow puts the camera on them
+            // Choosing whom to follow puts the camera on them, alone
             onFollow={(bike) =>
               change((v) => {
                 v.setFollow(bike);
+                v.setBothViews(false);
+                v.recenter();
+              })
+            }
+            onBothViews={() =>
+              change((v) => {
+                v.setBothViews(true);
                 v.recenter();
               })
             }

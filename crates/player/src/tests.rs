@@ -317,6 +317,53 @@ fn split_screen_only_while_following_a_rider_of_the_replay() {
 }
 
 #[test]
+fn one_and_two_show_and_hide_the_riders_views() {
+    let mut p = Player::new(Settings::default());
+    p.resize(800, 600, 1.0);
+    let mut two = content(10.0, 1);
+    let level = level();
+    let rec = Rec {
+        multiplayer: true,
+        flagtag: false,
+        level_id: 1,
+        level_filename: "test.lev".into(),
+        rides: vec![ride(10.0, 5.0), ride(10.0, 6.0)],
+    };
+    two.session = Session::new(&level, &rec, &[], replay::Settings::default());
+    p.load(two, false);
+    let follows =
+        |p: &mut Player| -> Vec<usize> { p.views(0.0).iter().map(|v| v.follow).collect() };
+    assert_eq!(follows(&mut p), [0, 1]);
+    // Hiding the first rider shows the second alone
+    p.key("1", false);
+    assert_eq!(follows(&mut p), [1]);
+    // Showing it again splits the screen
+    p.key("1", false);
+    assert_eq!(follows(&mut p), [0, 1]);
+    p.key("2", false);
+    assert_eq!(follows(&mut p), [0]);
+    // Hiding the only view shown shows both
+    p.key("1", false);
+    assert_eq!(follows(&mut p), [0, 1]);
+    // The split screen setting doesn't undo the choice
+    p.key("2", false);
+    p.set_split_screen(true);
+    assert_eq!(follows(&mut p), [0]);
+    // Without the split screen, the key follows that rider
+    p.set_split_screen(false);
+    p.key("2", false);
+    assert_eq!(follows(&mut p), [1]);
+    assert!(!p.both_views());
+    // Choosing the split screen again shows both
+    p.set_split_screen(true);
+    p.set_both_views(true);
+    assert!(p.both_views());
+    assert_eq!(follows(&mut p), [0, 1]);
+    p.key("2", false);
+    assert!(!p.both_views());
+}
+
+#[test]
 fn fitting_the_level_uses_the_screen_scale() {
     let mut p = player(10.0, 0);
     p.key("f", false);

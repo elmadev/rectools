@@ -185,6 +185,8 @@ pub struct Player {
     // The zoom before fitting the level, for going back onto the bike, unless zoomed since
     zoom_before_fit: Option<f64>,
     follow: BikeId,
+    // A two player replay shows the followed rider's view alone, as 1 and 2 choose
+    single_view: bool,
     // Zooming or moving the camera by hand pauses auto zoom until the camera is back on
     // the bike
     taken_over: bool,
@@ -206,6 +208,7 @@ impl Player {
             center: None,
             zoom_before_fit: None,
             follow: BikeId(0),
+            single_view: false,
             taken_over: false,
             auto_frame: AutoFrame::default(),
         }
@@ -237,6 +240,7 @@ impl Player {
         self.pan = Vec2::default();
         self.center = None;
         self.follow = BikeId(0);
+        self.single_view = false;
         self.taken_over = false;
         self.auto_frame = AutoFrame::default();
         if level_only {
@@ -258,6 +262,11 @@ impl Player {
 
     pub fn level_only(&self) -> bool {
         self.content.as_ref().is_some_and(|c| c.level_only)
+    }
+
+    // A replay of two riders, not one with replays merged into it
+    pub fn multiplayer(&self) -> bool {
+        self.session().is_some_and(|s| s.riders.len() > 1)
     }
 
     pub fn across(&self) -> bool {
@@ -412,6 +421,8 @@ impl Player {
             Action::Recenter => self.recenter(),
             Action::FollowNext => self.follow_next(1),
             Action::FollowPrevious => self.follow_next(-1),
+            Action::ToggleView1 if !level_only => self.toggle_view(0),
+            Action::ToggleView2 if !level_only => self.toggle_view(1),
             Action::ToggleTimer => self.settings.timer = !self.settings.timer,
             Action::ToggleMinimap => self.settings.minimap = !self.settings.minimap,
             // Shown, and the next size up, round to the smallest after the biggest
@@ -591,6 +602,43 @@ impl Player {
         }
     }
 
+    // Shows or hides the view of a rider of a two player replay, like the game's Toggle
+    // Show/Hide: the other rider's view is shown alone, or both again, never neither. Without
+    // the split screen it follows the rider instead.
+    pub fn toggle_view(&mut self, rider: usize) {
+        let riders = self.session().map_or(0, |s| s.riders.len());
+        if rider >= riders.min(2) {
+            return;
+        }
+        let following_rider = self.follow.0 < riders;
+        if !self.settings.split_screen || !following_rider {
+            self.follow = BikeId(rider);
+            self.single_view = true;
+        } else if self.single_view {
+            self.single_view = false;
+        } else {
+            self.follow = BikeId(1 - rider);
+            self.single_view = true;
+        }
+        self.recenter();
+    }
+
+    // Both riders' views of a two player replay are shown, unless one was chosen alone
+    pub fn both_views(&self) -> bool {
+        let riders = self.session().map_or(0, |s| s.riders.len());
+        self.settings.split_screen && riders > 1 && !self.single_view && self.follow.0 < riders
+    }
+
+    // Shows both riders' views of a two player replay, following the first rider when on a
+    // ghost, or the followed rider's view alone
+    pub fn set_both_views(&mut self, both: bool) {
+        let riders = self.session().map_or(0, |s| s.riders.len());
+        self.single_view = !both;
+        if both && self.follow.0 >= riders {
+            self.follow = BikeId(0);
+        }
+    }
+
     pub fn set_centered_camera(&mut self, centered: bool) {
         self.settings.centered_camera = centered;
     }
@@ -689,7 +737,10 @@ impl Player {
         let free = self.center.is_some();
         let auto = (auto_zoom && !free).then_some((&mut self.auto_frame, dt));
         // Following a merged replay shows that bike alone
-        let split = s.split_screen && !free && self.follow.0 < content.session.riders.len();
+        let split = s.split_screen
+            && !self.single_view
+            && !free
+            && self.follow.0 < content.session.riders.len();
         camera::layout_views(&content.session, base, (w, h), split, auto)
     }
 

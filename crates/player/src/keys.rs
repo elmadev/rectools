@@ -24,6 +24,9 @@ pub enum Action {
     Recenter,
     FollowNext,
     FollowPrevious,
+    // The view of the first or second rider of a two player replay shown or hidden
+    ToggleView1,
+    ToggleView2,
     // Pictures, and the level's own ground and sky
     TogglePictures,
     ToggleGrass,
@@ -125,6 +128,14 @@ const BINDINGS: &[Binding] = &[
         action: Action::FollowPrevious,
     },
     Binding {
+        keys: &["1"],
+        action: Action::ToggleView1,
+    },
+    Binding {
+        keys: &["2"],
+        action: Action::ToggleView2,
+    },
+    Binding {
         keys: &["p", "P"],
         action: Action::TogglePictures,
     },
@@ -175,6 +186,8 @@ pub struct KeyHelp {
     pub level: bool,
     // Only for Elma: Across has no pictures, grass or gravity arrows
     pub elma_only: bool,
+    // Only for a two player replay
+    pub multiplayer: bool,
 }
 
 const fn help(keys: &'static str, description: &'static str) -> KeyHelp {
@@ -183,6 +196,14 @@ const fn help(keys: &'static str, description: &'static str) -> KeyHelp {
         description,
         level: false,
         elma_only: false,
+        multiplayer: false,
+    }
+}
+
+const fn multiplayer(keys: &'static str, description: &'static str) -> KeyHelp {
+    KeyHelp {
+        multiplayer: true,
+        ..help(keys, description)
     }
 }
 
@@ -192,6 +213,7 @@ const fn level(keys: &'static str, description: &'static str, elma_only: bool) -
         description,
         level: true,
         elma_only,
+        multiplayer: false,
     }
 }
 
@@ -207,6 +229,7 @@ pub const KEYS: &[KeyHelp] = &[
     level("F", "Show the whole level", false),
     help("C", "Back to the bike"),
     help("N / Shift N", "Follow the next / previous bike"),
+    multiplayer("1 / 2", "Show / hide the first / second rider's view"),
     level("P", "Pictures, and the level's own ground and sky", true),
     level("G", "Grass", true),
     level("A", "Gravity arrows", true),

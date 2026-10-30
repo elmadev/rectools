@@ -297,6 +297,8 @@ pub enum Action {
     NextMinimapSize,
     ToggleLastAppleTime,
     ShowEverything,
+    ToggleView1,
+    ToggleView2,
 }
 
 impl From<Action> for player::Action {
@@ -327,6 +329,8 @@ impl From<Action> for player::Action {
             Action::NextMinimapSize => A::NextMinimapSize,
             Action::ToggleLastAppleTime => A::ToggleLastAppleTime,
             Action::ShowEverything => A::ShowEverything,
+            Action::ToggleView1 => A::ToggleView1,
+            Action::ToggleView2 => A::ToggleView2,
         }
     }
 }
@@ -342,6 +346,9 @@ pub struct KeyHelp {
     // Only for Elma: Across has no pictures, grass or gravity arrows
     #[wasm_bindgen(readonly, js_name = elmaOnly)]
     pub elma_only: bool,
+    // Only for a two player replay
+    #[wasm_bindgen(readonly)]
+    pub multiplayer: bool,
 }
 
 #[wasm_bindgen]
@@ -366,6 +373,7 @@ pub fn key_help() -> Vec<KeyHelp> {
             description: k.description,
             level: k.level,
             elma_only: k.elma_only,
+            multiplayer: k.multiplayer,
         })
         .collect()
 }
@@ -378,6 +386,8 @@ pub struct ViewerState {
     pub has_content: bool,
     #[wasm_bindgen(js_name = levelOnly)]
     pub level_only: bool,
+    // Two riders, not merged replays
+    pub multiplayer: bool,
     pub across: bool,
     pub duration: f64,
     #[wasm_bindgen(js_name = bikeCount)]
@@ -387,6 +397,9 @@ pub struct ViewerState {
     // Before the screen's scale
     pub zoom: f64,
     pub follow: usize,
+    // Both riders' views of a two player replay, see `setBothViews`
+    #[wasm_bindgen(js_name = bothViews)]
+    pub both_views: bool,
     #[wasm_bindgen(js_name = centeredCamera)]
     pub centered_camera: bool,
     pub timer: bool,
@@ -711,6 +724,7 @@ impl Viewer {
         ViewerState {
             has_content: self.loaded.is_some(),
             level_only: p.level_only(),
+            multiplayer: p.multiplayer(),
             across: p.across(),
             duration: p.shown_duration(),
             bike_count: p.bike_count(),
@@ -718,6 +732,7 @@ impl Viewer {
             speed: p.speed(),
             zoom: p.zoom(),
             follow: p.follow().0,
+            both_views: p.both_views(),
             centered_camera: s.centered_camera,
             timer: s.timer,
             minimap: s.minimap,
@@ -881,6 +896,13 @@ impl Viewer {
     #[wasm_bindgen(js_name = setFollow)]
     pub fn set_follow(&mut self, bike: usize) {
         self.player.set_follow(BikeId(bike));
+    }
+
+    // Shows both riders' views of a two player replay, following the first rider when on a
+    // ghost, or the followed rider's view alone, as keys 1 and 2 do
+    #[wasm_bindgen(js_name = setBothViews)]
+    pub fn set_both_views(&mut self, both: bool) {
+        self.player.set_both_views(both);
     }
 
     #[wasm_bindgen(js_name = setSplitScreen)]
