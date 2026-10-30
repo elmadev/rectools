@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Zooming with the wheel back from the smallest or largest zoom reaches 1x again.
+
 ## 0.4.0 - 2026-10-27
 
 - Across replays can now also show the last apple time.

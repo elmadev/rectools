@@ -268,6 +268,27 @@ fn zoom_steps_come_back_to_one() {
 }
 
 #[test]
+fn wheel_notches_come_back_to_one_from_the_limits() {
+    let mut p = player(10.0, 0);
+    for _ in 0..100 {
+        p.zoom_by(1.0 / ZOOM_STEP);
+    }
+    assert_eq!(p.zoom(), MIN_ZOOM);
+    while p.zoom() < 0.99 {
+        p.zoom_by(ZOOM_STEP);
+    }
+    assert!(near(p.zoom(), 1.0));
+    for _ in 0..100 {
+        p.zoom_by(ZOOM_STEP);
+    }
+    assert_eq!(p.zoom(), MAX_ZOOM);
+    while p.zoom() > 1.01 {
+        p.zoom_by(1.0 / ZOOM_STEP);
+    }
+    assert!(near(p.zoom(), 1.0));
+}
+
+#[test]
 fn split_screen_only_while_following_a_rider_of_the_replay() {
     let mut p = Player::new(Settings::default());
     p.resize(800, 600, 1.0);

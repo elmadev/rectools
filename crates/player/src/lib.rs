@@ -497,9 +497,20 @@ impl Player {
         self.settings.zoom = zoom;
     }
 
-    // From the zoom on screen, which auto zoom may have made smaller than the one set
+    // From the zoom on screen, which auto zoom may have made smaller than the one set. Back
+    // from MIN_ZOOM or MAX_ZOOM it goes from the power of ZOOM_STEP past it, so wheel notches
+    // land on the zoom steps again, like the zoom buttons
     pub fn zoom_by(&mut self, factor: f64) {
-        self.set_zoom(self.shown_zoom() * factor);
+        let shown = self.shown_zoom();
+        let level = shown.ln() / ZOOM_STEP.ln();
+        let from = if factor > 1.0 && shown <= MIN_ZOOM * (1.0 + 1e-9) {
+            ZOOM_STEP.powf((level + 1e-6).floor())
+        } else if factor < 1.0 && shown >= MAX_ZOOM * (1.0 - 1e-9) {
+            ZOOM_STEP.powf((level - 1e-6).ceil())
+        } else {
+            shown
+        };
+        self.set_zoom(from * factor);
     }
 
     // To the next power of ZOOM_STEP, so stepping always comes back to 1 however the zoom
