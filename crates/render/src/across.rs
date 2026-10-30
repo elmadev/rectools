@@ -20,6 +20,11 @@ const MARGIN: (f64, f64) = (400.0, 300.0);
 // The sky never moves faster than this against the camera
 const MAX_SKY_SPEED: f64 = 0.1;
 const CLOUD_SPEED: f64 = 0.5;
+// The game's level at 640 pixels wide with its default bike size (Arany, State->fakt 0.6), which
+// it draws the big clouds at their size against. At 320 wide it halves both.
+const CLOUD_PIXELS_PER_METER: f64 = 60.0;
+// The clouds shrink with the zoom until this many of them cover the view's width or height
+const MAX_CLOUDS: f64 = 32.0;
 // The height the sky and clouds are made for
 const SCREEN_HEIGHT: f64 = 480.0;
 
@@ -222,18 +227,36 @@ pub fn sky_instances(
     };
     out.push(image(sprites.sky, -offset.0, -offset.1, None));
 
-    // Port of felhokfel
+    // Port of felhokfel. The game draws the clouds at their size against its level at
+    // CLOUD_PIXELS_PER_METER, at both of its widths, and scrolls them half as fast as the level.
+    // Here they stay that big against the level at any zoom. They are kept about the middle of
+    // the view, so zooming doesn't move them.
     if let Some(clouds) = sprites.clouds {
         let (w, h) = (clouds.rect.width as f64, clouds.rect.height as f64);
+        // Screen pixels per cloud pixel
+        let cloud_scale = (ppm / CLOUD_PIXELS_PER_METER)
+            .max(size.0 / (MAX_CLOUDS * w))
+            .max(size.1 / (MAX_CLOUDS * h));
+        // Cloud pixels per pixel of `camera`
+        let speed = CLOUD_SPEED * ppm / (PIXELS_PER_METER * cloud_scale);
+        let middle = camera + Vec2::new(size.0, size.1) * (0.5 * PIXELS_PER_METER / ppm);
         let start = (
-            (-camera.x * CLOUD_SPEED).rem_euclid(w) - w,
-            (-camera.y * CLOUD_SPEED).rem_euclid(h) - h,
+            (-middle.x * speed + size.0 / (2.0 * cloud_scale)).rem_euclid(w) - w,
+            (-middle.y * speed + size.1 / (2.0 * cloud_scale)).rem_euclid(h) - h,
         );
+        let texel = cloud_scale / ppm;
+        let (width, height) = (w * texel, h * texel);
         let mut x = start.0;
-        while x < display.0 {
+        while x * cloud_scale < size.0 {
             let mut y = start.1;
-            while y < display.1 {
-                out.push(image(clouds.rect, x, y, Some(clouds.transparency)));
+            while y * cloud_scale < size.1 {
+                let origin = [corner.x + x * texel, corner.y + y * texel];
+                out.push(
+                    Instance::new(origin, [width, 0.0], [0.0, height])
+                        .image(clouds.rect, Some(clouds.transparency))
+                        .snap(snap::EXACT)
+                        .distance(2000.0),
+                );
                 y += h;
             }
             x += w;
