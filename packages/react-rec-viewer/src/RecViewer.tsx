@@ -554,10 +554,12 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     }
     const viewer = viewerRef.current;
     viewer?.resize(w, h, dpr());
+    // The whole level fits the new size, if it was shown and not zoomed or moved since
+    if (viewer && stateRef.current && viewer.zoom() !== stateRef.current.zoom) sync();
     invalidate();
     // A new size clears the canvas, which would show blank until the next frame draws it
     if (resized && viewer?.hasContent()) viewer.render();
-  }, [invalidate]);
+  }, [invalidate, sync]);
 
   // Create the GPU viewer once per canvas, with the settings as the props start them
   useEffect(() => {

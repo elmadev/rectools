@@ -184,6 +184,8 @@ pub struct Player {
     center: Option<Vec2>,
     // The zoom before fitting the level, for going back onto the bike, unless zoomed since
     zoom_before_fit: Option<f64>,
+    // The whole level is shown, not zoomed or moved since, so a new size fits it again
+    fitted: bool,
     follow: BikeId,
     // A two player replay shows the followed rider's view alone, as 1 and 2 choose
     single_view: bool,
@@ -207,6 +209,7 @@ impl Player {
             pan: Vec2::default(),
             center: None,
             zoom_before_fit: None,
+            fitted: false,
             follow: BikeId(0),
             single_view: false,
             taken_over: false,
@@ -239,6 +242,7 @@ impl Player {
         self.end_pause = 0.0;
         self.pan = Vec2::default();
         self.center = None;
+        self.fitted = false;
         self.follow = BikeId(0);
         self.single_view = false;
         self.taken_over = false;
@@ -484,9 +488,13 @@ impl Player {
 
     // Size of the view in device pixels, and how many of them a screen pixel is
     pub fn resize(&mut self, width: u32, height: u32, scale: f64) {
+        let before = (self.viewport, self.scale);
         self.viewport = (width.max(1), height.max(1));
         if scale.is_finite() && scale > 0.0 {
             self.scale = scale;
+        }
+        if self.fitted && (self.viewport, self.scale) != before {
+            self.fit_level();
         }
     }
 
@@ -504,6 +512,7 @@ impl Player {
         if (zoom - self.settings.zoom).abs() > 1e-9 * self.settings.zoom {
             self.taken_over = true;
             self.zoom_before_fit = None;
+            self.fitted = false;
         }
         self.settings.zoom = zoom;
     }
@@ -549,6 +558,7 @@ impl Player {
         let ppm = camera::pixels_per_meter(self.settings.zoom * self.scale);
         let shift = Vec2::new(-dx / ppm, dy / ppm);
         self.taken_over = true;
+        self.fitted = false;
         match &mut self.center {
             Some(center) => *center = *center + shift,
             None => self.pan = self.pan + shift,
@@ -565,6 +575,7 @@ impl Player {
         self.zoom_before_fit.get_or_insert(self.settings.zoom);
         self.settings.zoom = zoom / self.scale;
         self.center = Some(center);
+        self.fitted = true;
     }
 
     // Back to following the bike, with auto zoom again, at the zoom from before fitting the
@@ -575,6 +586,7 @@ impl Player {
         }
         self.pan = Vec2::default();
         self.center = None;
+        self.fitted = false;
         self.taken_over = false;
         self.auto_frame = AutoFrame::default();
     }

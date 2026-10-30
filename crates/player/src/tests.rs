@@ -364,6 +364,23 @@ fn one_and_two_show_and_hide_the_riders_views() {
 }
 
 #[test]
+fn the_whole_level_fits_again_at_a_new_size() {
+    let mut p = player(10.0, 0);
+    p.fit_level();
+    p.resize(500, 600, 1.0);
+    let narrower = p.zoom();
+    p.fit_level();
+    assert_eq!(p.zoom(), narrower);
+    p.resize(800, 600, 1.0);
+    assert!(p.zoom() > narrower);
+    // Not once zoomed by hand
+    p.zoom_by(1.1);
+    let zoomed = p.zoom();
+    p.resize(500, 600, 1.0);
+    assert_eq!(p.zoom(), zoomed);
+}
+
+#[test]
 fn fitting_the_level_uses_the_screen_scale() {
     let mut p = player(10.0, 0);
     p.key("f", false);
