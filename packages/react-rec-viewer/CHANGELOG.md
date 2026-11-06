@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 - 2026-11-06
 
 - Clouds in Across levels keep their size against the level and move at half its speed when zooming.
 - The whole level stays fitted when the player changes size.
