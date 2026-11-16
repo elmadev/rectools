@@ -16,8 +16,7 @@ export interface ControlsProps {
   duration: number;
   bikeCount: number;
   follow: number;
-  // A two player replay can show both riders' views, which the follow menu offers first
-  splitScreen: boolean;
+  // Both riders' views of a two player replay, which the follow menu offers first
   bothViews: boolean;
   // With the finish times
   bikeLabels: string[];
@@ -437,11 +436,11 @@ export function Controls(p: ControlsProps) {
           <select
             aria-label="Follow"
             title="Follow"
-            value={p.splitScreen && p.bothViews ? "split" : p.follow}
+            value={p.bothViews ? "split" : p.follow}
             onChange={(e) => (e.target.value === "split" ? p.onBothViews() : p.onFollow(Number(e.target.value)))}
             style={{ ...buttonStyle, maxWidth: 220 }}
           >
-            {p.splitScreen && <option value="split">Split screen</option>}
+            {p.multiplayer && <option value="split">Split screen</option>}
             {Array.from({ length: p.bikeCount }, (_, i) => (
               <option key={i} value={i}>
                 {p.bikeLabels[i]}

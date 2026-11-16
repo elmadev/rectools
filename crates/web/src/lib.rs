@@ -914,11 +914,6 @@ impl Viewer {
         self.player.set_both_views(both);
     }
 
-    #[wasm_bindgen(js_name = setSplitScreen)]
-    pub fn set_split_screen(&mut self, split: bool) {
-        self.player.set_split_screen(split);
-    }
-
     #[wasm_bindgen(js_name = setTimer)]
     pub fn set_timer(&mut self, timer: bool) {
         self.player.set_timer(timer);

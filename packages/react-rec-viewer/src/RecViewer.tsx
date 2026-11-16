@@ -75,8 +75,6 @@ export interface RecViewerProps extends ReplayInput {
   centeredCamera?: boolean;
   defaultCenteredCamera?: boolean;
   onCenteredCameraChange?: (centered: boolean) => void;
-  // Show both bikes of a two player replay
-  splitScreen?: boolean;
   // The timer at the top right, on unless set
   timer?: boolean;
   defaultTimer?: boolean;
@@ -370,7 +368,6 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     defaultZoom = 1,
     bikeLabels,
     time,
-    splitScreen = true,
     autoPlaySetting,
     onAutoPlaySettingChange,
     lgrChoices,
@@ -618,11 +615,10 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
         (APPLY[key] as (v: Viewer, x: unknown) => void)(viewer, value);
       }
     }
-    viewer.setSplitScreen(splitScreen);
     viewer.setLooping(loop);
     sync();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewerReady, ...Object.values(given), splitScreen, loop, sync]);
+  }, [viewerReady, ...Object.values(given), loop, sync]);
 
   // The level options given, over the ones the core has
   const { grass, pictures, customSky, arrows, animatedObjects, stillObjects, fancyboost } = levelOptions ?? {};
@@ -1035,7 +1031,6 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
             duration={s?.duration ?? 0}
             bikeCount={bikeCount}
             follow={s?.follow ?? 0}
-            splitScreen={splitScreen && (s?.multiplayer ?? false)}
             bothViews={s?.bothViews ?? false}
             bikeLabels={Array.from({ length: bikeCount }, (_, i) => {
               const name = bikeLabels?.[i] || `Bike ${i + 1}`;
