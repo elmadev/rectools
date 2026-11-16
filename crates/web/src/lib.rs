@@ -449,6 +449,15 @@ pub struct Viewer {
     across: Option<(Vec<u8>, Arc<elma_formats::across::gfx::AcrossGraphics>)>,
 }
 
+// The browser's GPU objects are freed only when JavaScript collects them, which a page making
+// players one after another outpaces until the GPU runs out of memory. Destroying the device
+// frees everything made on it at once.
+impl Drop for Viewer {
+    fn drop(&mut self) {
+        self.renderer.device().destroy();
+    }
+}
+
 #[wasm_bindgen]
 impl Viewer {
     // Opens WebGPU, or WebGL2 where WebGPU isn't available, of those it is built with

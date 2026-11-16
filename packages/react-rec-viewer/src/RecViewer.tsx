@@ -162,6 +162,19 @@ export interface RecViewerHandle {
 
 const dpr = () => window.devicePixelRatio || 1;
 
+// Gives back what the browser keeps for drawing on a canvas a viewer was on, which otherwise
+// stays until the page lets go of the canvas and it is collected: its WebGPU textures, its
+// WebGL context, and its pixels. A page that makes viewers one after another runs out of GPU
+// memory before that, or of WebGL contexts.
+function releaseCanvas(canvas: HTMLCanvasElement) {
+  // Each is null where the canvas has the other
+  const webgpu = canvas.getContext("webgpu" as "2d") as unknown as { unconfigure?: () => void } | null;
+  webgpu?.unconfigure?.();
+  canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
+  canvas.width = 1;
+  canvas.height = 1;
+}
+
 const errorOverlay: CSSProperties = {
   position: "absolute",
   inset: 0,
@@ -585,9 +598,13 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
       .catch(reportError);
     return () => {
       cancelled = true;
-      viewerRef.current?.free();
+      const viewer = viewerRef.current;
       viewerRef.current = null;
       setViewerReady(false);
+      if (viewer) {
+        viewer.free();
+        releaseCanvas(canvas);
+      }
     };
   }, [reportError]);
   const start = useRef({ given, defaults });

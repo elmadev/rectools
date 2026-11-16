@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Pages that open many players one after another no longer run out of GPU memory and freeze.
+
 ## 0.5.0 - 2026-11-06
 
 - Clouds in Across levels keep their size against the level and move at half its speed when zooming.
