@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 - 2026-11-16
 
 - Pages that open many players one after another no longer run out of GPU memory and freeze.
 - A new replay given after one played to its end starts playing, so a playlist can keep one player, in full screen.
