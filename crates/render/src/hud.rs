@@ -201,36 +201,115 @@ fn compact_time(centiseconds: i64) -> String {
     }
 }
 
-// The last apple row of the game's info panel (render_info_panel): the label 180 game pixels
-// from the right edge, the time right aligned 10 from it, 10 up from the bottom
-pub(crate) fn last_apple_rects(
+// The font of the info panel's text: the game's, or its medium one for elma-classic's Large Font
+fn info_font(large_font: bool) -> &'static Font {
+    if large_font {
+        Font::medium()
+    } else {
+        Font::small()
+    }
+}
+
+// The game's info panel in the bottom right corner (render_info_panel), and rows of a label and
+// a value under it. The last apple row has its label 180 game pixels from the right edge and
+// the time right aligned 10 from it, 10 up from the bottom, like the game. Rows under it put it
+// higher, each a line with a little room, and their labels start where its label does, further
+// left for a row that needs the room, the values right aligned with the time.
+pub(crate) fn info_panel_rects(
     view_width: i32,
-    apples: i32,
-    last_centiseconds: i64,
+    last_apple: Option<(i32, i64)>,
+    rows: &[(String, String)],
     scale: i32,
     large_font: bool,
 ) -> Vec<TextRect> {
     // elma-classic's render_info_panel
-    let (font, label_offset, per_char) = if large_font {
-        (Font::medium(), 280, 12)
-    } else {
-        (Font::small(), 180, 6)
-    };
+    let (label_offset, per_char) = if large_font { (280, 12) } else { (180, 6) };
+    let font = info_font(large_font);
     let width = view_width / scale;
-    let value = compact_time(last_centiseconds);
-    let label_offset = label_offset + (value.len() as i32 - 10).max(0) * per_char;
-    let y = 10;
+    let right = width - 10;
+    let text_width = |text: &str| font.width(text.as_bytes());
+    let gap = 2 * text_width("  ");
+    let last_apple = last_apple.map(|(apples, last)| {
+        let value = compact_time(last);
+        let offset = label_offset + (value.len() as i32 - 10).max(0) * per_char;
+        (format!("last apple ({apples})"), value, width - offset)
+    });
+    let widest = rows
+        .iter()
+        .map(|(label, value)| right - text_width(label) - gap - text_width(value))
+        .min();
+    let game_x = last_apple
+        .as_ref()
+        .map_or(width - label_offset, |row| row.2);
+    let label_x = widest.map_or(game_x, |x| x.min(game_x)).max(0);
+    let step = font.line_height() + 2;
     let mut out = Vec::new();
-    let label = format!("last apple ({apples})");
-    font.write(label.as_bytes(), width - label_offset, y, scale, &mut out);
-    let value_x = width - 10 - font.width(value.as_bytes());
-    font.write(value.as_bytes(), value_x, y, scale, &mut out);
+    let mut row = |label: &str, value: &str, label_x: i32, line: usize| {
+        let y = 10 + line as i32 * step;
+        font.write(label.as_bytes(), label_x, y, scale, &mut out);
+        font.write(
+            value.as_bytes(),
+            right - text_width(value),
+            y,
+            scale,
+            &mut out,
+        );
+    };
+    for (line, (label, value)) in rows.iter().rev().enumerate() {
+        row(label, value, label_x, line);
+    }
+    if let Some((label, value, game_x)) = &last_apple {
+        let x = if rows.is_empty() { *game_x } else { label_x };
+        row(label, value, x, rows.len());
+    }
     out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn rows(rows: &[(&str, &str)]) -> Vec<(String, String)> {
+        rows.iter().map(|&(l, v)| (l.into(), v.into())).collect()
+    }
+
+    fn bottom(rects: &[TextRect]) -> i32 {
+        rects.iter().map(|r| r.rect.y).min().unwrap()
+    }
+
+    #[test]
+    fn info_rows_go_under_the_last_apple_row_in_its_columns() {
+        let step = Font::small().line_height() + 2;
+        let alone = info_panel_rects(640, Some((3, 2297)), &[], 1, false);
+        let info = rows(&[("lgr", "default"), ("level id", "123")]);
+        let panel = info_panel_rects(640, Some((3, 2297)), &info, 1, false);
+        // The rows alone are the same rows, under the last apple row moved two up
+        let below = info_panel_rects(640, None, &info, 1, false);
+        let row = &panel[below.len()..];
+        assert_eq!(row.len(), alone.len());
+        assert_eq!(bottom(row), bottom(&alone) + 2 * step);
+        // Short rows leave the last apple row where the game has it
+        assert_eq!(row[0].rect.x, alone[0].rect.x);
+        // Its label and the rows' start in one column, and their values end in one
+        let left = |line: usize| {
+            let y = 10 + line as i32 * step;
+            let on = panel
+                .iter()
+                .filter(|r| (y - 2..y + step - 2).contains(&r.rect.y));
+            on.map(|r| r.rect.x).min().unwrap()
+        };
+        assert!((left(0) - left(2)).abs() <= 1 && (left(1) - left(2)).abs() <= 1);
+    }
+
+    #[test]
+    fn a_long_row_moves_the_labels_left() {
+        let short = info_panel_rects(640, Some((3, 2297)), &rows(&[("lgr", "x")]), 1, false);
+        let long = rows(&[("level", "A long level name that needs some room")]);
+        let wide = info_panel_rects(640, Some((3, 2297)), &long, 1, false);
+        let left = |rects: &[TextRect]| rects.iter().map(|r| r.rect.x).min().unwrap();
+        assert!(left(&wide) < left(&short) - 50);
+        assert!(left(&wide) >= 0);
+    }
 
     #[test]
     fn compact_times_like_the_game() {
@@ -242,7 +321,7 @@ mod tests {
 
     #[test]
     fn the_last_apple_row_sits_bottom_right() {
-        let rects = last_apple_rects(640, 3, 2297, 1, false);
+        let rects = info_panel_rects(640, Some((3, 2297)), &[], 1, false);
         assert!(!rects.is_empty());
         assert!(rects.iter().all(|r| r.color == 25));
         let left = rects.iter().map(|r| r.rect.x).min().unwrap();
@@ -252,15 +331,15 @@ mod tests {
         assert!((640 - 14..=640 - 10 - 1).contains(&right), "{right}");
         assert!(rects.iter().all(|r| r.rect.y >= 10 && r.rect.y < 10 + 14));
         // Twice the scale is the same row on twice the pixels
-        let big = last_apple_rects(1280, 3, 2297, 2, false);
+        let big = info_panel_rects(1280, Some((3, 2297)), &[], 2, false);
         assert_eq!(big.len(), rects.len());
         assert_eq!(big[0].rect.x, 2 * rects[0].rect.x);
     }
 
     #[test]
     fn the_large_font_row_is_further_from_the_edge_and_taller() {
-        let small = last_apple_rects(640, 3, 2297, 1, false);
-        let large = last_apple_rects(640, 3, 2297, 1, true);
+        let small = info_panel_rects(640, Some((3, 2297)), &[], 1, false);
+        let large = info_panel_rects(640, Some((3, 2297)), &[], 1, true);
         let left = |rects: &[TextRect]| rects.iter().map(|r| r.rect.x).min().unwrap();
         let top = |rects: &[TextRect]| {
             rects

@@ -116,6 +116,8 @@ pub fn level_lgr(lev: &[u8]) -> Result<String, JsValue> {
 #[wasm_bindgen]
 #[derive(Default)]
 pub struct Replay {
+    // The replay's file name, which errors and the info name it by
+    file_name: String,
     lgr: Vec<u8>,
     level: Vec<u8>,
     res: Vec<u8>,
@@ -167,6 +169,20 @@ impl Replay {
             lgr: lgr.to_vec(),
             shirts: vec![None],
             ..Default::default()
+        }
+    }
+
+    // The replay's file name, like "01Abc.rec", which errors and the info name it by
+    #[wasm_bindgen(js_name = setFileName)]
+    pub fn set_file_name(&mut self, name: &str) {
+        self.file_name = name.to_string();
+    }
+
+    // What errors call the replay: its file name, when it was given one
+    fn path(&self) -> PathBuf {
+        match self.file_name.is_empty() {
+            true => PathBuf::from("the replay"),
+            false => PathBuf::from(&self.file_name),
         }
     }
 
@@ -543,7 +559,7 @@ impl Viewer {
         let graphics = self.across_graphics(&replay.across_pack)?;
         let files = Files::res(replay.across_pack.clone()).map_err(load_failure)?;
         let kinds = graphics.kinds();
-        let path = PathBuf::from("the replay");
+        let path = replay.path();
         let external = |data: &[u8]| {
             game_data::across::parse_level("the level", data, &kinds).map_err(load_failure)
         };
@@ -637,15 +653,8 @@ impl Viewer {
                     .map_err(|e| failure("ghost", format!("replay {}: {e}", i + 2)))?;
                 ghosts.push((format!("replay {}", i + 2), ghost, shirt(i + 1)));
             }
-            game_data::assemble(
-                PathBuf::from("the replay"),
-                rec,
-                level,
-                lgr,
-                shirt(0),
-                ghosts,
-            )
-            .map_err(load_failure)?
+            game_data::assemble(replay.path(), rec, level, lgr, shirt(0), ghosts)
+                .map_err(load_failure)?
         })
     }
 
@@ -1045,6 +1054,7 @@ impl Viewer {
         let (Some(loaded), Some(session)) = (&self.loaded, self.player.session()) else {
             return;
         };
+        self.renderer.set_info(self.player.info());
         let rendered = self.renderer.render(
             &loaded.scene,
             &self.targets,

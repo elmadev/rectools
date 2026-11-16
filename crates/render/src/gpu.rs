@@ -51,6 +51,8 @@ pub struct Renderer {
     fill_map_group: wgpu::BindGroup,
     // The texts drawn over every frame, see set_texts
     texts: Vec<HudRect>,
+    // The rows render puts in each view's bottom right corner, see set_info
+    info: Vec<(String, String)>,
     text_rects: Vec<crate::hud::TextRect>,
     // A replay's frame as a World, kept for its buffers
     session_frame: SessionFrame,
@@ -609,6 +611,7 @@ impl Renderer {
             presents: Vec::new(),
             frame: FramePlan::default(),
             texts: Vec::new(),
+            info: Vec::new(),
             text_rects: Vec::new(),
             session_frame: SessionFrame::default(),
             timing: None,
@@ -989,6 +992,14 @@ impl Renderer {
         );
     }
 
+    // The rows of a label and a value render draws in each view's bottom right corner from
+    // now on, under the last apple row, see View::info. None to draw none.
+    pub fn set_info(&mut self, rows: &[(String, String)]) {
+        if self.info != rows {
+            self.info = rows.to_vec();
+        }
+    }
+
     fn present_pipeline(&mut self, format: wgpu::TextureFormat) -> usize {
         if let Some(i) = self.presents.iter().position(|p| p.format == format) {
             return i;
@@ -1044,11 +1055,13 @@ impl Renderer {
         output: Output,
     ) -> Result<(), RenderError> {
         let mut frame = std::mem::take(&mut self.session_frame);
+        let info = std::mem::take(&mut self.info);
         frame.build(session, views);
         let world = frame.world(session);
-        let views: Vec<View> = frame.views().collect();
+        let views: Vec<View> = frame.views().map(|v| View { info: &info, ..v }).collect();
         let drawn = self.render_world(scene, targets, &world, &views, options, output);
         self.session_frame = frame;
+        self.info = info;
         drawn
     }
 

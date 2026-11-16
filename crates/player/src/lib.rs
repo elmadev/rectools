@@ -6,6 +6,7 @@ pub mod keys;
 
 pub use keys::{Action, KEYS, KeyHelp, action_for_key};
 
+use elma_formats::lev::ObjectType;
 use render::camera::{self, AutoFrame};
 use render::{
     CameraMode, DynamicOptions, GhostStyle, MAX_ZOOM, MIN_ZOOM, RenderOptions, SceneOptions,
@@ -125,6 +126,8 @@ pub struct Content {
     pub finish_times: Vec<Option<f64>>,
     // Drawn with Across's graphics, which have no pictures, grass or gravity arrows
     pub across: bool,
+    // What the info key shows about the level and the replay, as a label and a value each
+    pub info: Vec<(String, String)>,
 }
 
 impl Content {
@@ -151,8 +154,51 @@ impl Content {
             best_time: loaded.best_time,
             finish_times,
             across: loaded.settings.game.is_across(),
+            info: info_rows(loaded),
         }
     }
+}
+
+// The replay's and the level's file names, the level's title and LGR, its polygons, objects
+// but the start and pictures, and the replay's frames and events
+fn info_rows(loaded: &game_data::Loaded) -> Vec<(String, String)> {
+    let (level, rec) = (&loaded.level, &loaded.rec);
+    let across = loaded.settings.game.is_across();
+    let mut rows = Vec::new();
+    let mut row = |label: &str, value: String| rows.push((label.to_string(), value));
+    // A file's name, which a page may not have given in place of saying "the replay"
+    let rec_file = loaded.path.file_name().map(|n| n.to_string_lossy());
+    if let Some(name) =
+        rec_file.filter(|n| !loaded.level_only && n.to_lowercase().ends_with(".rec"))
+    {
+        row("replay", name.into_owned());
+    }
+    if !loaded.level_only && !rec.level_filename.is_empty() {
+        row("level", rec.level_filename.clone());
+    }
+    if !level.name.is_empty() {
+        row("title", level.name.clone());
+    }
+    if !across {
+        row("lgr", level.lgr.clone());
+    }
+    row("polygons", level.polygons.len().to_string());
+    let count = |kind| level.objects.iter().filter(|o| o.kind == kind).count();
+    row("flowers", count(ObjectType::Exit).to_string());
+    row("killers", count(ObjectType::Killer).to_string());
+    row("apples", count(ObjectType::Food).to_string());
+    row("pictures", level.sprites.len().to_string());
+    if loaded.level_only {
+        return rows;
+    }
+    let ride = &rec.rides[0];
+    row("frames", ride.frames.len().to_string());
+    row("events", ride.events.len().to_string());
+    let merged = loaded.riders.len().saturating_sub(rec.rides.len());
+    if merged > 0 {
+        row("merged", merged.to_string());
+    }
+    rows
 }
 
 // What a tick did
@@ -193,6 +239,8 @@ pub struct Player {
     // the bike
     taken_over: bool,
     auto_frame: AutoFrame,
+    // The info key's lines are shown
+    info: bool,
 }
 
 impl Player {
@@ -214,6 +262,7 @@ impl Player {
             single_view: false,
             taken_over: false,
             auto_frame: AutoFrame::default(),
+            info: false,
         }
     }
 
@@ -262,6 +311,14 @@ impl Player {
 
     pub fn session(&self) -> Option<&Session> {
         self.content.as_ref().map(|c| &c.session)
+    }
+
+    // The rows to show about the level and the replay, none until the info key shows them
+    pub fn info(&self) -> &[(String, String)] {
+        match &self.content {
+            Some(content) if self.info => &content.info,
+            _ => &[],
+        }
     }
 
     pub fn level_only(&self) -> bool {
@@ -441,6 +498,7 @@ impl Player {
             Action::ToggleLastAppleTime => {
                 self.settings.last_apple_time = !self.settings.last_apple_time
             }
+            Action::ToggleInfo => self.info = !self.info,
             // These change nothing in Across, so they leave the settings alone there
             Action::TogglePictures if !across => {
                 let level = &mut self.settings.level;

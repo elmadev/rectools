@@ -6,6 +6,7 @@
 - A new replay given after one played to its end starts playing, so a playlist can keep one player, in full screen.
 - Replays from programs that record turns differently no longer end early with the wrong time.
 - A replay paused by switching tabs plays on when you come back.
+- Shift+I shows the level's and the replay's details under the last apple time.
 - Removed the `pauseWhenHidden` prop: a replay always pauses in a hidden tab and plays on when it is shown.
 - Removed the `splitScreen` prop: a two player replay always opens in split screen, and the follow menu offers one rider's view.
 - Removed the `showErrors` prop, which didn't hide errors downloading files: errors always show over the view, and `onError` still tells each one.

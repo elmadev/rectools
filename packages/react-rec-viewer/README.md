@@ -50,7 +50,8 @@ preload({ levUrl: "https://api.elma.online/dl/level/123" });
 ## From bytes: `RecViewer`
 
 `RecViewer` takes the files as `Uint8Array`s: `rec`, `lev`, `lgr`, `res` (`elma.res`, for
-the internal levels), `acrossPack`, `shirt`, and `ghosts: { rec, shirt }[]`.
+the internal levels), `acrossPack`, `shirt`, `ghosts: { rec, shirt }[]`, and
+`recFileName`, the replay's file name for errors and the info Shift+I shows.
 While they download, `levelOnly` says no replay is coming, so the controls are a level's from
 the start.
 

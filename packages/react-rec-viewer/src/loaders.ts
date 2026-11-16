@@ -149,6 +149,17 @@ export interface LoadedSources {
   bikes: number[];
 }
 
+// The last part of a URL's path, like "01Abc.rec"
+function urlFileName(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  const last = new URL(url, "http://x/").pathname.split("/").pop();
+  try {
+    return last ? decodeURIComponent(last) : undefined;
+  } catch {
+    return last;
+  }
+}
+
 // An Elma level file, rather than an Across one (POT06)
 function isElmaLevel(lev: Uint8Array): boolean {
   return String.fromCharCode(...lev.subarray(0, 5)) === "POT14";
@@ -199,7 +210,8 @@ export async function loadSources(sources: Sources): Promise<LoadedSources> {
   ]);
   const ghosts: GhostInput[] = recs.slice(1).map((rec, i) => ({ rec, shirt: shirts[i + 1] }));
   const bikes = infos.map((info) => (info?.multiplayer ? 2 : 1));
-  return { input: { rec: recs[0], lev, lgr, shirt: shirts[0], ghosts }, bikes };
+  const recFileName = urlFileName(sources.recUrls[0]);
+  return { input: { rec: recs[0], recFileName, lev, lgr, shirt: shirts[0], ghosts }, bikes };
 }
 
 // An Across replay: drawn from the Across pack, with the level only for levels from files
@@ -217,5 +229,6 @@ async function loadAcross(
     needsLevel ? asKind("lev", get(sources.levUrl!)) : Promise.resolve(undefined),
   ]);
   const ghosts: GhostInput[] = recs.slice(1).map((rec) => ({ rec }));
-  return { input: { rec: recs[0], lev, acrossPack, ghosts }, bikes: recs.map(() => 1) };
+  const recFileName = urlFileName(sources.recUrls[0]);
+  return { input: { rec: recs[0], recFileName, lev, acrossPack, ghosts }, bikes: recs.map(() => 1) };
 }

@@ -344,7 +344,7 @@ const sameGhosts = (a: GhostInput[] | undefined, b: GhostInput[] | undefined) =>
 // The ghosts `next` has after those of `shown`, when that's all that changed, so they can be
 // merged into the replay shown. None when nothing changed, undefined when anything else did.
 const addedGhosts = (shown: ReplayInput, next: ReplayInput): GhostInput[] | undefined => {
-  const files = ["rec", "lgr", "lev", "res", "acrossPack", "shirt"] as const;
+  const files = ["rec", "recFileName", "lgr", "lev", "res", "acrossPack", "shirt"] as const;
   if (!next.rec || files.some((k) => shown[k] !== next[k])) return undefined;
   const before = shown.ghosts ?? [];
   const after = next.ghosts ?? [];
@@ -359,6 +359,7 @@ const sameState = (a: State, b: State) =>
 export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function RecViewer(props, ref) {
   const {
     rec,
+    recFileName,
     lgr,
     lev,
     res,
@@ -658,7 +659,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
       }
       return;
     }
-    const input = { rec, lgr, lev, res, acrossPack, shirt, ghosts };
+    const input = { rec, recFileName, lgr, lev, res, acrossPack, shirt, ghosts };
     const shown = viewer.hasContent() && !viewer.isAcross() ? shownInput.current : null;
     const added = shown ? addedGhosts(shown, input) : undefined;
     setError(null);
@@ -712,7 +713,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
       reportError(e, shown);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewerReady, rec, lgr, lev, res, acrossPack, shirt, ghosts, reportError]);
+  }, [viewerReady, rec, recFileName, lgr, lev, res, acrossPack, shirt, ghosts, reportError]);
 
   // Seek from the time prop
   useEffect(() => {

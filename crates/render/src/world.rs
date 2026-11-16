@@ -76,6 +76,9 @@ pub struct View<'a> {
     // The game's "last apple" row in the bottom right: how many apples are taken, and when
     // the last one was in hundredths
     pub last_apple: Option<(i32, i64)>,
+    // Rows of a label and a value in the bottom right corner, under the last apple row, which
+    // moves up for them
+    pub info: &'a [(String, String)],
     pub minimap: bool,
 }
 
@@ -163,6 +166,7 @@ impl SessionFrame {
             objects: v.objects.clone().map(|r| &self.objects[r]),
             timer: v.timer,
             last_apple: v.last_apple,
+            info: &[],
             minimap: v.params.minimap,
         })
     }

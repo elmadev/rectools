@@ -72,6 +72,8 @@ export interface GhostInput {
 export interface ReplayInput {
   // Leave out to look around the level on its own
   rec?: Uint8Array;
+  // The replay's file name, like "01Abc.rec", which errors and the info (Shift+I) show
+  recFileName?: string;
   // Not needed for Across, which is drawn from `acrossPack`
   lgr?: Uint8Array;
   // The .lev file, not needed for replays of the internal levels
@@ -146,6 +148,7 @@ export function buildReplay(input: ReplayInput): Wasm.Replay {
     replay = Replay.level(input.lev, lgr);
   } else {
     replay = new Replay(input.rec, lgr);
+    if (input.recFileName) replay.setFileName(input.recFileName);
   }
   if (input.acrossPack) replay.setAcrossPack(input.acrossPack);
   if (!input.rec) return replay;

@@ -4,7 +4,7 @@
 
 use crate::camera::{self, world_view_corner};
 use crate::fill_map::Tiling;
-use crate::hud::{PixelRect, last_apple_rects, timer_rects};
+use crate::hud::{PixelRect, info_panel_rects, timer_rects};
 use crate::instance::{CanvasRect, Instance, mode, snap_to_pixel_center};
 use crate::options::{CameraMode, GhostStyle, RenderOptions, TextureZoom};
 use crate::scene::{Chunk, Look, Pictures, Scene, TextureRef, dynamic_instances};
@@ -394,11 +394,11 @@ pub fn plan(
             );
             timer_data.extend(rects.iter().map(|&r| HudRect::new(r, TIMER_COLOR)));
         }
-        if let Some((apples, last)) = params.last_apple {
-            let rects = last_apple_rects(
+        if params.last_apple.is_some() || !params.info.is_empty() {
+            let rects = info_panel_rects(
                 params.viewport[2] as i32,
-                apples,
-                last,
+                params.last_apple,
+                params.info,
                 hud_scale,
                 options.large_font,
             );
@@ -978,6 +978,7 @@ mod tests {
                 flagtag: None,
             }),
             last_apple: Some((1, 500)),
+            info: &[],
             minimap: true,
         }
     }

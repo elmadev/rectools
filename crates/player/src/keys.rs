@@ -38,6 +38,8 @@ pub enum Action {
     ToggleLastAppleTime,
     // Grass, pictures and the level's own ground and sky on
     ShowEverything,
+    // What is known about the level and the replay, in the bottom right corner
+    ToggleInfo,
 }
 
 impl Action {
@@ -167,6 +169,10 @@ const BINDINGS: &[Binding] = &[
         keys: &["x", "X"],
         action: Action::ToggleLastAppleTime,
     },
+    Binding {
+        keys: &["I"],
+        action: Action::ToggleInfo,
+    },
 ];
 
 // What `key` does, if anything
@@ -236,6 +242,7 @@ pub const KEYS: &[KeyHelp] = &[
     help("T", "Timer"),
     help("V / Shift V", "Minimap / its size"),
     help("X", "Last apple time"),
+    level("Shift I", "The level's and the replay's details", false),
     level(
         "Shift G",
         "Grass, pictures and the level's own ground and sky on",
@@ -256,6 +263,8 @@ mod tests {
         assert_eq!(action_for_key("g"), Some(Action::ToggleGrass));
         assert_eq!(action_for_key("G"), Some(Action::ShowEverything));
         assert_eq!(action_for_key("x"), Some(Action::ToggleLastAppleTime));
+        assert_eq!(action_for_key("I"), Some(Action::ToggleInfo));
+        assert_eq!(action_for_key("i"), None);
         assert_eq!(action_for_key("j"), None);
     }
 

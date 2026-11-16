@@ -60,7 +60,25 @@ fn content(seconds: f64, ghosts: usize) -> Content {
         best_time: None,
         finish_times: vec![],
         across: false,
+        info: vec![
+            ("title".into(), "one".into()),
+            ("frames".into(), "31".into()),
+        ],
     }
+}
+
+#[test]
+fn shift_i_shows_the_info_and_hides_it_again() {
+    let mut p = Player::new(Settings::default());
+    p.load(content(1.0, 0), false);
+    assert!(p.info().is_empty());
+    assert!(p.key("I", false));
+    assert_eq!(p.info()[0], ("title".into(), "one".into()));
+    // Held down, it doesn't flicker
+    p.key("I", true);
+    assert_eq!(p.info().len(), 2);
+    p.key("I", false);
+    assert!(p.info().is_empty());
 }
 
 fn player(seconds: f64, ghosts: usize) -> Player {

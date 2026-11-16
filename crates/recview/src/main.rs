@@ -1002,6 +1002,7 @@ impl App {
         };
         match (&self.current, self.player.session()) {
             (Some(current), Some(session)) => {
+                gpu.renderer.set_info(self.player.info());
                 let rendered = gpu.renderer.render(
                     &current.scene,
                     &gpu.targets,
