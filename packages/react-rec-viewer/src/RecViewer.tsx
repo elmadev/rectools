@@ -141,8 +141,6 @@ export interface RecViewerProps extends ReplayInput {
   keyboard?: boolean;
   // Start again when the replay ends (default: true)
   loop?: boolean;
-  // Pause when the tab is hidden (default: true)
-  pauseWhenHidden?: boolean;
   // Keep the screen on while playing (default: true)
   wakeLock?: boolean;
   className?: string;
@@ -388,7 +386,6 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     keyboard = true,
     levelOnly: levelOnlyComing,
     loop = true,
-    pauseWhenHidden = true,
     wakeLock = true,
     className,
     style,
@@ -468,6 +465,8 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
   const dirty = useRef(true);
   // Playing stopped at the end of the replay, rather than paused, so the next one given plays
   const stoppedAtEnd = useRef(false);
+  // Paused by the tab being hidden, so it plays on when the tab is shown
+  const pausedWhileHidden = useRef(false);
   // Starts the render loop again, which stops while there is nothing to draw
   const wakeLoop = useRef<() => void>(() => {});
   const invalidate = useCallback(() => {
@@ -694,10 +693,10 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
           replay.free();
         }
         shownInput.current = input;
-        const { playing, pauseWhenHidden = true } = callbacks.current.props;
-        const hidden = pauseWhenHidden && document.visibilityState === "hidden";
-        if (stoppedAtEnd.current && playing === undefined && !hidden && !viewer.levelOnly()) {
-          viewer.setPlaying(true);
+        if (stoppedAtEnd.current && callbacks.current.props.playing === undefined && !viewer.levelOnly()) {
+          // In a hidden tab once it is shown
+          if (document.visibilityState === "hidden") pausedWhileHidden.current = true;
+          else viewer.setPlaying(true);
         }
       }
       const only = viewer.levelOnly();
@@ -855,15 +854,23 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     return () => canvas.removeEventListener("dblclick", toggleFullscreen);
   }, [toggleFullscreen]);
 
-  // Pause in a hidden tab
+  // Pause in a hidden tab, and play on from there when it is shown again. Playing goes on only
+  // as frames are drawn, which browsers don't do in hidden tabs, so it would stop anyway.
   useEffect(() => {
-    if (!pauseWhenHidden) return;
     const onVisibility = () => {
-      if (document.visibilityState === "hidden" && stateRef.current?.playing) setPlaying(false);
+      if (document.visibilityState === "hidden") {
+        if (stateRef.current?.playing) {
+          pausedWhileHidden.current = true;
+          setPlaying(false);
+        }
+      } else if (pausedWhileHidden.current) {
+        pausedWhileHidden.current = false;
+        setPlaying(true);
+      }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [pauseWhenHidden, setPlaying]);
+  }, [setPlaying]);
 
   // Keep the screen on while playing
   const playing = state?.playing ?? false;

@@ -5,6 +5,8 @@
 - Pages that open many players one after another no longer run out of GPU memory and freeze.
 - A new replay given after one played to its end starts playing, so a playlist can keep one player, in full screen.
 - Replays from programs that record turns differently no longer end early with the wrong time.
+- A replay paused by switching tabs plays on when you come back.
+- Removed the `pauseWhenHidden` prop: a replay always pauses in a hidden tab and plays on when it is shown.
 
 ## 0.5.0 - 2026-11-06
 

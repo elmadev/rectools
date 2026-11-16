@@ -78,7 +78,7 @@ Settings with a `default…` and an `on…Change` can be controlled or left to t
 | `time` | | Seek here when it changes |
 | `bikeLabels` | | Names for the follow menu |
 | `controls`, `keyboard` | true | The control bar, and the keys below |
-| `pauseWhenHidden`, `wakeLock` | true | Pause in a hidden tab; keep the screen on while playing |
+| `wakeLock` | true | Keep the screen on while playing |
 | `autoPlaySetting`, `lgrChoices`, `lgrChoice` | | Settings for the page to keep, shown in the menu with their callbacks |
 | `onTimeChange`, `onDurationChange`, `onEnd`, `onError`, `onSettingsOpen` | | |
 | `showErrors` | true | Show errors over the view |
