@@ -66,7 +66,8 @@ export interface RecViewerProps extends ReplayInput {
   time?: number;
   onTimeChange?: (seconds: number) => void;
   onDurationChange?: (seconds: number) => void;
-  // The replay reached its end and stopped, when not looping
+  // The replay reached its end and stopped, when not looping. Another replay given then plays,
+  // unless `playing` says otherwise, so a playlist goes on in the same viewer.
   onEnd?: () => void;
   // Every error is a RecViewerError, whose kind says what couldn't be used
   onError?: (error: RecViewerError) => void;
@@ -465,6 +466,8 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
   const viewerRef = useRef<Viewer | null>(null);
   // Something changed that a paused player has to draw
   const dirty = useRef(true);
+  // Playing stopped at the end of the replay, rather than paused, so the next one given plays
+  const stoppedAtEnd = useRef(false);
   // Starts the render loop again, which stops while there is nothing to draw
   const wakeLoop = useRef<() => void>(() => {});
   const invalidate = useCallback(() => {
@@ -497,6 +500,7 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     if (prev && sameState(next, prev)) return;
     stateRef.current = next;
     setState(next);
+    if (next.playing) stoppedAtEnd.current = false;
     if (!prev) return;
     const on = callbacks.current.changed;
     for (const key of Object.keys(APPLY) as Setting[]) {
@@ -651,9 +655,18 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewerReady || !viewer) return;
-    // Nothing given yet: RecPlayer shows the viewer while it downloads, so the GPU is ready
-    // when the files are in
-    if (!rec && !lev && !lgr && !res && !acrossPack) return;
+    // Nothing given: RecPlayer shows the viewer while it downloads, so the GPU is ready when
+    // the files are in, and keeps it after a replay that couldn't be had, which isn't left on
+    // screen as if it were the one that failed
+    if (!rec && !lev && !lgr && !res && !acrossPack) {
+      if (viewer.hasContent()) {
+        viewer.unload();
+        shownInput.current = null;
+        setLoaded(false);
+        sync();
+      }
+      return;
+    }
     const input = { rec, lgr, lev, res, acrossPack, shirt, ghosts };
     const shown = viewer.hasContent() && !viewer.isAcross() ? shownInput.current : null;
     const added = shown ? addedGhosts(shown, input) : undefined;
@@ -681,6 +694,11 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
           replay.free();
         }
         shownInput.current = input;
+        const { playing, pauseWhenHidden = true } = callbacks.current.props;
+        const hidden = pauseWhenHidden && document.visibilityState === "hidden";
+        if (stoppedAtEnd.current && playing === undefined && !hidden && !viewer.levelOnly()) {
+          viewer.setPlaying(true);
+        }
       }
       const only = viewer.levelOnly();
       // A replay after a level shown whole goes back to the zoom it was given
@@ -765,7 +783,10 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
       // The core plays the replay, and pauses at the end before looping
       const ended = viewer.tick(dt);
       if (viewer.playing() !== s.playing || viewer.autoZoomPaused() !== s.autoZoomPaused) sync();
-      if (ended) callbacks.current.props.onEnd?.();
+      if (ended) {
+        stoppedAtEnd.current = true;
+        callbacks.current.props.onEnd?.();
+      }
       if (draw) viewer.render();
       const t = viewer.time();
       if (t !== reported) {

@@ -184,21 +184,18 @@ export const RecPlayer = forwardRef<RecViewerHandle, RecPlayerProps>(function Re
       className={className}
       style={{ position: "relative", display: "flex", flexDirection: "column", background: "#000", ...style }}
     >
-      {/* Shown while the files download too, so the viewer readies the GPU meanwhile; not after
-          a failure, which would leave the replay before it on screen */}
-      {input || (loading && !error) ? (
-        <RecViewer
-          ref={ref}
-          bikeLabels={bikeLabels(recUrls ?? [], recNames, bikesPerRec)}
-          {...viewerProps}
-          {...input}
-          levelOnly={!recUrls?.length}
-          onError={reportError}
-          style={{ flex: 1, minHeight: 0 }}
-        />
-      ) : (
-        <div style={{ flex: 1 }} />
-      )}
+      {/* Shown while the files download too, so the viewer readies the GPU meanwhile, and
+          kept, empty, after a failure, so the next replay given plays in it as it is, in full
+          screen if it was */}
+      <RecViewer
+        ref={ref}
+        bikeLabels={bikeLabels(recUrls ?? [], recNames, bikesPerRec)}
+        {...viewerProps}
+        {...input}
+        levelOnly={!recUrls?.length}
+        onError={reportError}
+        style={{ flex: 1, minHeight: 0 }}
+      />
       {error ? (
         // Over the replay that goes on when one being merged in couldn't be downloaded
         <div style={input ? errorBadge : overlay} role="alert">
