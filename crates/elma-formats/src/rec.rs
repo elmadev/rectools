@@ -71,6 +71,19 @@ pub struct Event {
     pub volume: f32,
 }
 
+impl Event {
+    // The object touched, for a touch: an event without a sound. The games write -1 for the
+    // object of the others, but some programs write other numbers there, such as which way a
+    // turn faces.
+    pub fn touched_object(&self) -> Option<usize> {
+        if self.event_id == WavEvent::None {
+            usize::try_from(self.object_id).ok()
+        } else {
+            None
+        }
+    }
+}
+
 // The recording of one bike
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ride {

@@ -4,6 +4,7 @@
 
 - Pages that open many players one after another no longer run out of GPU memory and freeze.
 - A new replay given after one played to its end starts playing, so a playlist can keep one player, in full screen.
+- Replays from programs that record turns differently no longer end early with the wrong time.
 
 ## 0.5.0 - 2026-11-06
 

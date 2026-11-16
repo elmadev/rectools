@@ -796,8 +796,8 @@ mod tests {
         let apple = elma_formats::rec::Event {
             time: 0.0,
             object_id: food as i16,
-            event_id: elma_formats::rec::WavEvent::Food,
-            volume: 0.99,
+            event_id: elma_formats::rec::WavEvent::None,
+            volume: 0.0,
         };
         let mut took_apple = rec.rides[0].clone();
         took_apple.events.push(apple);

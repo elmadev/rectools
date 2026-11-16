@@ -162,6 +162,34 @@ fn the_exit_finishes_only_with_every_apple() {
     assert_eq!(wins, [12]);
 }
 
+// Some programs write a number in a turn's object, which isn't a touch: one replay finished
+// on its first turn
+#[test]
+fn only_events_without_a_sound_touch_objects() {
+    let turn = |frame, object_id| Event {
+        object_id,
+        ..sound(frame, WavEvent::Turn)
+    };
+    let mut s = session(vec![
+        turn(2, APPLE),
+        turn(3, UP_APPLE),
+        turn(4, EXIT),
+        touch(6, APPLE),
+        touch(7, UP_APPLE),
+        touch(9, EXIT),
+    ]);
+    let steps = play_to(&mut s, 5);
+    assert!(taken(&s).iter().all(|&gone| !gone));
+    assert_eq!(s.finish_time(), None);
+    let turns = steps
+        .iter()
+        .flat_map(|st| &st.sounds)
+        .filter(|x| x.event == WavEvent::Turn);
+    assert_eq!(turns.count(), 3);
+    play_to(&mut s, 10);
+    assert_eq!(s.finish_time(), Some(at(9)));
+}
+
 #[test]
 fn sound_events_play_on_their_frame() {
     let mut s = session(vec![sound(4, WavEvent::Bump), touch(5, APPLE)]);

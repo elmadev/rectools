@@ -354,7 +354,7 @@ impl Rider {
             .events
             .iter()
             .take_while(move |e| e.time <= time)
-            .filter_map(|e| usize::try_from(e.object_id).ok())
+            .filter_map(Event::touched_object)
     }
 
     fn rewind(&mut self) {
@@ -401,7 +401,7 @@ impl Rider {
                 break;
             }
             self.event_index += 1;
-            if event.object_id < 0 {
+            if event.touched_object().is_none() {
                 self.animation.note_volt(&event, time);
             }
             on_event(self, event);
@@ -584,8 +584,8 @@ impl Session {
         let mut taken = 0;
         let mut last = None;
         for event in rider.ride.events.iter().take_while(|e| e.time <= self.time) {
-            let food = usize::try_from(event.object_id)
-                .ok()
+            let food = event
+                .touched_object()
                 .and_then(|i| self.objects.get(i))
                 .is_some_and(|o| o.kind == ObjectType::Food);
             if food {
@@ -740,7 +740,7 @@ impl Session {
         rider: &mut Rider,
         event: &Event,
     ) {
-        let Some(object) = objects.get_mut(event.object_id as usize) else {
+        let Some(object) = event.touched_object().and_then(|i| objects.get_mut(i)) else {
             return;
         };
         match object.kind {
@@ -767,7 +767,7 @@ impl Session {
         let total_apples = self.total_apples;
         let after_end = self.settings.game.events_after_end();
         self.riders[i].recall(time, after_end, |rider, event| {
-            if event.object_id >= 0 {
+            if event.touched_object().is_some() {
                 // Apples count before this event is handled, like the game
                 let taken = rider.apple_count + others;
                 Self::handle_object_event(objects, total_apples, taken, rider, &event);
@@ -939,7 +939,7 @@ fn finishes(session: &Session) -> Vec<Option<f64>> {
             r.ride
                 .events
                 .iter()
-                .filter_map(move |e| Some((e.time, rider, usize::try_from(e.object_id).ok()?)))
+                .filter_map(move |e| Some((e.time, rider, e.touched_object()?)))
         })
         .collect();
     // The game moves the first bike and then the second, so the other rider's apple taken at
