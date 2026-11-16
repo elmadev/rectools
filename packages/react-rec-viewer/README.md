@@ -81,7 +81,6 @@ Settings with a `default…` and an `on…Change` can be controlled or left to t
 | `wakeLock` | true | Keep the screen on while playing |
 | `autoPlaySetting`, `lgrChoices`, `lgrChoice` | | Settings for the page to keep, shown in the menu with their callbacks |
 | `onTimeChange`, `onDurationChange`, `onEnd`, `onError`, `onSettingsOpen` | | |
-| `showErrors` | true | Show errors over the view |
 
 A ref gives `play()`, `pause()`, `seek(seconds)`, `time()`, `duration()`, `recenter()`,
 `fitLevel()` and `toggleFullscreen()`.

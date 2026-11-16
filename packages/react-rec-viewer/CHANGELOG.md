@@ -7,6 +7,7 @@
 - Replays from programs that record turns differently no longer end early with the wrong time.
 - A replay paused by switching tabs plays on when you come back.
 - Removed the `pauseWhenHidden` prop: a replay always pauses in a hidden tab and plays on when it is shown.
+- Removed the `showErrors` prop, which didn't hide errors downloading files: errors always show over the view, and `onError` still tells each one.
 
 ## 0.5.0 - 2026-11-06
 

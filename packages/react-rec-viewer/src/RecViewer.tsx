@@ -71,9 +71,6 @@ export interface RecViewerProps extends ReplayInput {
   onEnd?: () => void;
   // Every error is a RecViewerError, whose kind says what couldn't be used
   onError?: (error: RecViewerError) => void;
-  // Show errors over the view, on unless set: what couldn't be played, or a badge when
-  // merging replays failed and the one playing goes on
-  showErrors?: boolean;
   // The bike in the middle of the view, on unless set; otherwise the game's classic camera
   centeredCamera?: boolean;
   defaultCenteredCamera?: boolean;
@@ -373,7 +370,6 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
     defaultZoom = 1,
     bikeLabels,
     time,
-    showErrors,
     splitScreen = true,
     autoPlaySetting,
     onAutoPlaySettingChange,
@@ -991,7 +987,9 @@ export const RecViewer = forwardRef<RecViewerHandle, RecViewerProps>(function Re
         ref={canvasRef}
         style={{ flex: 1, width: "100%", minHeight: 0, touchAction: "none", display: "block" }}
       />
-      {error && showErrors !== false && (
+      {/* What couldn't be played, or a badge when merging replays failed and the one playing
+          goes on */}
+      {error && (
         <div style={error.shown ? errorBadge : errorOverlay} role="alert">
           {error.shown ? `Couldn't add: ${error.error.message}` : `Couldn't play this: ${error.error.message}`}
         </div>
